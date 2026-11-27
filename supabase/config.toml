@@ -1,0 +1,4 @@
+project_id = "scpa-prf"
+
+[functions.sync-prf]
+verify_jwt = false
