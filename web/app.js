@@ -1,6 +1,6 @@
 import { config, supabase, context, adminAccounts, dashboard, pendingApprovals, record, requestOptions, addRequestOption, submit, decide, setDemoRole, currentDemoRole, pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto } from './data.js';
 import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, day, dateTime } from './model.js';
-import { preparePrint } from './print.js';
+import { exportPrintPng, preparePrint } from './print.js';
 import { enhanceSelects, focusSelect } from './search-select.js';
 
 const app = document.querySelector('#app');
@@ -27,6 +27,9 @@ const paths = {
   lock: '<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v2"/>',
   send: '<path d="m3 4 18 8-18 8 3-8-3-8Zm3 8h15"/>',
   image: '<rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 5"/>',
+  up: '<path d="M12 20V5m-6 6 6-6 6 6"/>',
+  download: '<path d="M12 4v11m-4-4 4 4 4-4M5 16v4h14v-4"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
 };
 const icon = key => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[key]}</svg>`;
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => (
@@ -62,6 +65,7 @@ let searchTimer;
 let requestListReturn;
 const printPreview = document.getElementById('print-preview');
 let printReturn;
+const canCopyImage = Boolean(navigator.clipboard?.write && window.ClipboardItem);
 let approvalCount = 0;
 let approvalRevision = 0;
 let approvalLoading = false;
@@ -169,7 +173,7 @@ function renderFrame(content) {
     ${person.approver || person.superAdmin ? '<span id="pending-approval-summary" class="sr-only" role="status"></span>' : ''}
     <header class="page-top"><div class="account">
       ${config.demo ? `<span class="demo-tag">Demo</span><select id="demo-role" aria-label="Demo role">
-        ${Object.entries({ employee: 'Employee view', supervisor: 'Supervisor view', hrd: 'HRD view' })
+        ${Object.entries({ employee: 'Employee', supervisor: 'Supervisor', hrd: 'HRD' })
           .map(([key, label]) => `<option value="${key}" ${key === currentDemoRole() ? 'selected' : ''}>${label}</option>`).join('')}
       </select>` : `<button class="button secondary profile-button" type="button" data-action="profile" aria-label="My account"
         ${screen === 'profile' ? 'aria-current="page"' : ''} title="My account">
@@ -180,9 +184,15 @@ function renderFrame(content) {
   </aside><div class="page" data-density="${compact ? 'compact' : 'comfortable'}">
     <div id="notice" role="status" class="notice" hidden></div>
     ${content}
-  </div></div>`;
+  </div>${button('scroll-top', '', 'scroll-top', 'up', 'aria-label="Back to top" title="Back to top" hidden')}</div>`;
+  syncScrollTop();
   renderApprovalCount();
   enhanceSelects(app);
+}
+
+function syncScrollTop() {
+  const control = app.querySelector('.scroll-top');
+  if (control) control.hidden = window.scrollY < 320;
 }
 
 function openProfile() {
@@ -634,6 +644,7 @@ function detailView() {
       <div class="actions"><div class="print-choice"><select id="paper" aria-label="Paper size">
         <option ${paper === 'A4' ? 'selected' : ''}>A4</option><option ${paper === 'Letter' ? 'selected' : ''}>Letter</option>
       </select>${button('print', 'Print PRF', 'secondary', 'print', 'data-mutation')}</div>
+      ${button('export', 'Export PRF', 'secondary', 'download', 'data-mutation')}
       ${mayEdit ? button('revise', 'Revise request', 'primary', 'edit') : ''}</div>
     </div>
     <div class="detail-layout">
@@ -827,6 +838,13 @@ app.addEventListener('click', async e => {
     app.querySelector('.page').dataset.density = density;
     target.setAttribute('aria-pressed', String(compact));
     saveViewPreference('prf-table-density', density);
+  } else if (action === 'scroll-top') {
+    const heading = app.querySelector('.page h1');
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+    }
+    window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   } else if (action === 'profile' && accountUser && screen !== 'profile') {
     profileReturn = { mode: screen, id: detail?.row.id, page, filter, inboxStatus, search, scroll: window.scrollY };
     openProfile();
@@ -909,16 +927,30 @@ app.addEventListener('click', async e => {
     detail = null;
     edit = null;
     renderLogin();
-  } else if (action === 'print') {
+  } else if (action === 'print' || action === 'export') {
     try {
       markBusy(true);
-      await preparePrint(detail.row, paper);
-      printReturn = { button: target, scroll: window.scrollY };
+      const row = detail.row;
+      const prepared = await preparePrint(row, paper);
+      const preview = printReturn = { button: target, scroll: window.scrollY };
       app.hidden = true;
       printPreview.hidden = false;
       window.scrollTo(0, 0);
-      printPreview.querySelector('[data-action="send-to-printer"]').focus({ preventScroll: true });
-      if (window.matchMedia('(pointer: fine)').matches) window.print();
+      const printButton = printPreview.querySelector('[data-action="send-to-printer"]');
+      printButton.focus({ preventScroll: true });
+      void exportPrintPng(prepared).then(blob => {
+        if (printReturn !== preview) return;
+        preview.blob = blob;
+        preview.url = URL.createObjectURL(blob);
+        printDownload.href = preview.url;
+        printDownload.download = `${row.number}.png`;
+        printDownload.removeAttribute('aria-disabled');
+        if (canCopyImage) copyImageButton.disabled = false;
+        if (action === 'export' && document.activeElement === printButton) printDownload.focus({ preventScroll: true });
+      }).catch(() => {
+        if (printReturn === preview) printStatus.textContent = 'Could not create the PNG. Printing is still available.';
+      });
+      if (action === 'print' && window.matchMedia('(pointer: fine)').matches) window.print();
     } catch (err) {
       banner(`Could not prepare the printout. ${err.message}`, true);
     } finally {
@@ -929,11 +961,25 @@ app.addEventListener('click', async e => {
 printPreview.querySelector('.print-controls').innerHTML = `<div class="actions">
   ${backButton('close-print', 'Back to request')}
   ${button('send-to-printer', 'Print', 'primary', 'print')}
-  </div><p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>`;
-printPreview.addEventListener('click', event => {
+  <a class="button secondary" data-print-download aria-disabled="true">${icon('download')}Download PNG</a>
+  ${button('copy-print', 'Copy image', 'secondary', 'copy', `disabled ${canCopyImage ? '' : 'hidden'}`)}
+  </div><p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>
+  <p class="print-export-status small" role="status"></p>`;
+const printDownload = printPreview.querySelector('[data-print-download]');
+const copyImageButton = printPreview.querySelector('[data-action="copy-print"]');
+const printStatus = printPreview.querySelector('.print-export-status');
+printPreview.addEventListener('click', async event => {
   const action = event.target.closest('button')?.dataset.action;
   if (action === 'send-to-printer') {
     window.print();
+  } else if (action === 'copy-print' && printReturn?.blob) {
+    const preview = printReturn;
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': preview.blob })]);
+      if (printReturn === preview) printStatus.textContent = 'PRF image copied.';
+    } catch {
+      if (printReturn === preview) printStatus.textContent = 'Could not copy the image. Use Download PNG instead.';
+    }
   } else if (action === 'close-print') {
     printPreview.hidden = true;
     app.hidden = false;
@@ -941,6 +987,11 @@ printPreview.addEventListener('click', event => {
     document.getElementById('print-paper')?.remove();
     printReturn.button.focus({ preventScroll: true });
     window.scrollTo(0, printReturn.scroll);
+    if (printReturn.url) URL.revokeObjectURL(printReturn.url);
+    printDownload.removeAttribute('href');
+    printDownload.setAttribute('aria-disabled', 'true');
+    copyImageButton.disabled = true;
+    printStatus.textContent = '';
     printReturn = null;
   }
 });
@@ -1012,6 +1063,7 @@ app.addEventListener('submit', async event => {
 });
 
 document.addEventListener('visibilitychange', () => { void refreshApprovalCount(); });
+window.addEventListener('scroll', syncScrollTop, { passive: true });
 window.addEventListener('focus', () => { void refreshApprovalCount(); });
 setInterval(refreshApprovalCount, 45_000);
 start();

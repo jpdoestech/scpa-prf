@@ -3,6 +3,7 @@ import { day } from './model.js';
 const template = './assets/scpa-prf-template.png';
 const svgNS = 'http://www.w3.org/2000/svg';
 const printInset = 14;
+const pxPerMm = 96 / 25.4;
 
 function svgNode(name, attributes) {
   const node = document.createElementNS(svgNS, name);
@@ -137,4 +138,81 @@ export async function preparePrint(row, paper) {
     root.append(extra);
     measure.remove();
   }
+  return { picture, svg, extra, paperWidth, paperHeight };
+}
+
+export async function exportPrintPng({ picture, svg, extra, paperWidth, paperHeight }) {
+  const overlay = svg.cloneNode(true);
+  overlay.querySelector('image').remove();
+  overlay.removeAttribute('style');
+  overlay.setAttribute('width', '552');
+  overlay.setAttribute('height', '465');
+  // Draw the template separately so the SVG used by canvas has no external resources.
+  const layer = new Image();
+  layer.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(overlay))}`;
+  await layer.decode();
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const pageWidth = paperWidth * pxPerMm;
+  const inset = printInset * pxPerMm;
+  const contentWidth = pageWidth - 2 * inset;
+  const formWidth = Math.min(contentWidth, (parseFloat(svg.style.maxWidth) || paperWidth) * pxPerMm);
+  const formHeight = formWidth * 465 / 552;
+  const noteInset = 2 * pxPerMm;
+  const noteWidth = contentWidth - 2 * noteInset;
+  const font = (parseFloat(extra.style.fontSize) || 9) * 4 / 3;
+  const lineHeight = font * 1.32;
+  const notes = [...extra.children].map(line => line.textContent);
+  const lines = [];
+  let y = inset + formHeight + 4 * pxPerMm;
+  ctx.font = `${font}px Arial`;
+  for (const paragraph of extra.classList.contains('compact') ? [notes.join('  •  ')] : notes) {
+    const wrapped = [];
+    let line = '';
+    for (const word of paragraph.split(/\s+/)) {
+      const joined = line ? `${line} ${word}` : word;
+      if (ctx.measureText(joined).width <= noteWidth) {
+        line = joined;
+        continue;
+      }
+      if (line) wrapped.push(line);
+      line = '';
+      if (ctx.measureText(word).width <= noteWidth) {
+        line = word;
+        continue;
+      }
+      for (const character of word) {
+        if (line && ctx.measureText(line + character).width > noteWidth) {
+          wrapped.push(line);
+          line = '';
+        }
+        line += character;
+      }
+    }
+    for (const text of [...wrapped, line]) {
+      lines.push({ text, y });
+      y += lineHeight;
+    }
+    y += 1.2 * pxPerMm;
+  }
+
+  const scale = 2.5;
+  canvas.width = Math.round(pageWidth * scale);
+  canvas.height = Math.round(Math.max(paperHeight * pxPerMm, y + inset) * scale);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width / scale, canvas.height / scale);
+  const x = (pageWidth - formWidth) / 2;
+  ctx.drawImage(picture, x, inset, formWidth, formHeight);
+  ctx.drawImage(layer, x, inset, formWidth, formHeight);
+  ctx.fillStyle = '#111';
+  ctx.font = `${font}px Arial`;
+  ctx.textBaseline = 'top';
+  for (const line of lines) ctx.fillText(line.text, inset + noteInset, line.y);
+
+  return new Promise((resolve, reject) => canvas.toBlob(blob => {
+    if (blob) resolve(blob);
+    else reject(new Error('Could not create the PNG.'));
+  }, 'image/png'));
 }
