@@ -36,7 +36,6 @@ let listRevision = 0;
 let routeRevision = 0;
 let busy = false;
 let pendingId;
-let loginEmail = '';
 let paper = 'A4';
 let searchTimer;
 
@@ -57,14 +56,14 @@ function renderLogin(message = '', error = false, inactive = false) {
   app.innerHTML = `<div class="login"><article class="panel">
     ${logo}
     <h1>${inactive ? 'Employee access required' : 'Sign in'}</h1>
-    <p class="muted">${inactive ? 'Ask HRD to activate your employee profile.' : 'Use your company email to access personnel requests.'}</p>
+    <p class="muted">${inactive ? 'Ask your PRF administrator to activate your employee profile.' : 'Sign in with the email and password for your PRF account.'}</p>
     <div id="notice" class="notice" role="status" hidden></div>
     ${inactive ? button('signout', 'Sign out', 'secondary', 'exit', 'style="margin-top:1rem"') :
       `<form id="login-form">
-        <label class="field">Company email<input type="email" name="email" autocomplete="email" value="${escape(loginEmail)}" ${loginEmail ? 'readonly' : 'required'}></label>
-        ${loginEmail ? '<label class="field">Sign-in code<input name="code" autocomplete="one-time-code" inputmode="numeric" maxlength="12" required><small>Enter the code sent to your company email.</small></label>' : ''}
-        <button class="button primary" data-mutation>${loginEmail ? 'Verify code' : 'Send sign-in code'}</button>
-        ${loginEmail ? button('change-email', 'Use a different email or resend', 'ghost') : ''}
+        <label class="field">Email<input type="email" name="email" autocomplete="username" required></label>
+        <label class="field">Password<input type="password" name="password" autocomplete="current-password" required></label>
+        <button class="button primary" data-mutation>Sign in</button>
+        <p class="muted small">For account access or a password reset, contact your PRF administrator.</p>
       </form>`}
   </article></div>`;
   banner(message, error);
@@ -371,13 +370,9 @@ app.addEventListener('click', async e => {
   } else if (action === 'signout') {
     const { error } = await supabase.auth.signOut({ scope: 'local' });
     if (error) return banner(error.message, true);
-    loginEmail = '';
     person = null;
     detail = null;
     edit = null;
-    renderLogin();
-  } else if (action === 'change-email') {
-    loginEmail = '';
     renderLogin();
   } else if (action === 'print') {
     try {
@@ -403,17 +398,10 @@ app.addEventListener('submit', async event => {
   markBusy(true);
   banner();
   try {
-    if (form.id === 'login-form' && !loginEmail) {
+    if (form.id === 'login-form') {
       const email = values.email.trim().toLowerCase();
-      const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+      const { error } = await supabase.auth.signInWithPassword({ email, password: values.password });
       if (error) throw error;
-      loginEmail = email;
-      renderLogin('Check your company email for the sign-in code.');
-      app.querySelector('[name="code"]')?.focus();
-    } else if (form.id === 'login-form') {
-      const { error } = await supabase.auth.verifyOtp({ email: loginEmail, token: values.code.trim(), type: 'email' });
-      if (error) throw error;
-      loginEmail = '';
       await start();
     } else if (form.id === 'request-form') {
       const row = await submit({ id: pendingId, form: values, version: edit?.version });

@@ -1,37 +1,30 @@
--- First create or invite these sample users in Authentication > Users.
--- Replace every example.com email, name, and branch with the approved roster.
+-- The super administrator first creates the three users in Authentication > Users.
+-- Replace the emails, names, and branch values with the approved pilot roster.
 begin;
 
-insert into public.branches (id, name) values
-  ('manila', 'Metro Manila'),
-  ('hq', 'Main Office')
-on conflict (id) do update set name = excluded.name;
+insert into public.branches (id, name) values ('pilot-office', 'Pilot Office')
+on conflict (id) do nothing;
 
 do $$
 declare
   employee uuid := (select id from auth.users where lower(email) = 'employee@example.com');
   supervisor uuid := (select id from auth.users where lower(email) = 'supervisor@example.com');
   hrd uuid := (select id from auth.users where lower(email) = 'hrd@example.com');
-  alternate_supervisor uuid := (select id from auth.users where lower(email) = 'alternate-supervisor@example.com');
-  alternate_hrd uuid := (select id from auth.users where lower(email) = 'alternate-hrd@example.com');
 begin
-  if employee is null or supervisor is null or hrd is null
-    or alternate_supervisor is null or alternate_hrd is null then
-    raise exception 'Provision the company email accounts in Supabase Auth first.';
+  if employee is null or supervisor is null or hrd is null then
+    raise exception 'Create the three pilot accounts in Supabase Auth first.';
+  end if;
+  if employee = supervisor or employee = hrd or supervisor = hrd then
+    raise exception 'The employee, supervisor, and HRD approver must be three distinct people.';
   end if;
 
-  insert into public.staff (id, name, branch_id, supervisor_override, hrd_override) values
-    (employee, 'Mika Reyes', 'manila', null, null),
-    (supervisor, 'Alex Garcia', 'manila', alternate_supervisor, null),
-    (hrd, 'Jamie Santos', 'hq', null, alternate_hrd),
-    (alternate_supervisor, 'Robin Cruz', 'hq', null, null),
-    (alternate_hrd, 'Sam Torres', 'hq', null, null)
-  on conflict (id) do update set name = excluded.name, branch_id = excluded.branch_id,
-    supervisor_override = excluded.supervisor_override, hrd_override = excluded.hrd_override;
+  insert into public.staff (id, name, branch_id) values
+    (employee, 'Mika Reyes', 'pilot-office'),
+    (supervisor, 'Alex Garcia', 'pilot-office'),
+    (hrd, 'Jamie Santos', 'pilot-office');
 
-  update public.branches set supervisor_id = supervisor, hrd_id = hrd where id = 'manila';
-  update public.branches set supervisor_id = alternate_supervisor, hrd_id = hrd where id = 'hq';
-  update public.staff set supervisor_override = supervisor where id = alternate_supervisor;
+  -- Route the pilot employee without changing any branch defaults.
+  update public.staff set supervisor_override = supervisor, hrd_override = hrd where id = employee;
 end $$;
 
 commit;

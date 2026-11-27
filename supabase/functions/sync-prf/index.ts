@@ -3,10 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.89.0';
 type Delivery = {
   event_id: number;
   lease_id: string;
-  recipient: string | null;
   snapshot: Record<string, string>;
-  sheets_at: string | null;
-  email_at: string | null;
   attempts: number;
   event: Record<string, string>;
 };
@@ -108,33 +105,8 @@ async function syncSheet(items: Delivery[]) {
   });
 }
 
-async function notify(item: Delivery) {
-  const appURL = new URL(secret('APP_URL'));
-  if (appURL.protocol !== 'https:') throw new Error('APP_URL must use HTTPS');
-  appURL.searchParams.set('request', item.event.request_id);
-  const message: Record<string, string> = {
-    supervisor: 'A personnel request is ready for supervisor review.',
-    hrd: 'A personnel request is ready for HRD review.',
-    returned: 'Your personnel request was returned for correction.',
-    approved: 'HRD approved your personnel request.',
-    disapproved: 'Your personnel request was disapproved.',
-  };
-  await fetchJSON('https://api.resend.com/emails', 'Send request notification', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${secret('RESEND_API_KEY')}`,
-      'Content-Type': 'application/json',
-      'Idempotency-Key': `prf-event-${item.event_id}-${item.event.request_id}`,
-    },
-    body: JSON.stringify({
-      from: secret('PRF_FROM_EMAIL'), to: [item.recipient], subject: `Personnel request ${item.snapshot.number}`,
-      text: `${message[item.event.status]}\n\nOpen the request and its timeline:\n${appURL.href}`,
-    }),
-  });
-}
-
 const diagnostic = (e: unknown) => e instanceof Error &&
-  /^(Missing configuration: |[a-zA-Z ]+ failed \(HTTP |Create the dedicated |APP_URL must )/.test(e.message)
+  /^(Missing configuration: |[a-zA-Z ]+ failed \(HTTP |Create the dedicated )/.test(e.message)
   ? e.message : 'Delivery failed. Check worker configuration and provider availability.';
 
 Deno.serve(async (req: Request) => {
@@ -150,37 +122,23 @@ Deno.serve(async (req: Request) => {
     const claim = await db.rpc('prf_claim_deliveries', { batch_size: 8 });
     if (claim.error) throw new Error('Claim deliveries failed (HTTP 500)');
     const items = claim.data as Delivery[];
-    const pending = items.filter(item => !item.sheets_at);
-    let sheetsError = '';
-    if (pending.length) {
-      try { await syncSheet(pending); } catch (err) { sheetsError = diagnostic(err); }
+    let sheetsError = null;
+    if (items.length) {
+      try { await syncSheet(items); } catch (err) { sheetsError = diagnostic(err); }
     }
-    let retries = 0;
+    const sheetsAt = sheetsError ? null : new Date().toISOString();
     let updateFailures = 0;
     for (const item of items) {
-      const errors = [];
-      const now = new Date().toISOString();
-      const sheetsAt = item.sheets_at ?? (sheetsError ? null : now);
-      if (!item.sheets_at && sheetsError) errors.push(sheetsError);
-      let emailAt = item.email_at;
-      if (item.recipient && !emailAt) {
-        try {
-          await notify(item);
-          emailAt = new Date().toISOString();
-        } catch (err) {
-          errors.push(diagnostic(err));
-        }
-      }
-      if (errors.length) retries += 1;
       const minutes = Math.min(60, 2 ** Math.min(item.attempts - 1, 6));
       const update = await db.from('delivery_queue').update({
-        sheets_at: sheetsAt, email_at: emailAt, last_error: errors.join('; ') || null,
+        sheets_at: sheetsAt, last_error: sheetsError,
         next_attempt_at: new Date(Date.now() + minutes * 60_000).toISOString(),
         lease_until: null, lease_id: null,
       }).eq('event_id', item.event_id).eq('lease_id', item.lease_id);
       if (update.error) updateFailures += 1;
     }
-    return Response.json({ claimed: items.length, retries, updateFailures }, { status: updateFailures ? 500 : 200 });
+    return Response.json({ claimed: items.length, retries: sheetsError ? items.length : 0, updateFailures },
+      { status: updateFailures ? 500 : 200 });
   } catch (err) {
     return Response.json({ error: diagnostic(err) }, { status: 500 });
   }

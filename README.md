@@ -26,10 +26,10 @@ Open http://127.0.0.1:4173. Set `PUBLIC_DEMO=true` only for sample builds.
 ## Set up Supabase
 
 1. Create a Supabase project and link the checkout with the Supabase CLI. Run `supabase db push` to apply the migration. Alternatively, run the migration in the project's SQL Editor.
-2. In Authentication, enable email sign-in, disable public sign-ups, configure custom SMTP, and set the **Magic Link** email template to show the sign-in code using `{{ .Token }}`. Set the Site URL to the production frontend URL. Provision staff accounts with company emails using Authentication → Users. Employees use a code sent to that email. [Supabase email OTP](https://supabase.com/docs/guides/auth/auth-email-passwordless) · [Supabase SMTP](https://supabase.com/docs/guides/auth/auth-smtp)
+2. Enable email sign-in and disable public sign-ups. The PRF super administrator creates every account with email and password. See the [production setup guide](SUPABASE-SETUP.md).
 3. Adapt `supabase/provision-example.sql` to create branches, enable staff, and configure the routing. Creating a Supabase Auth account and adding an active `staff` row are both required. To remove access, set `staff.active = false`. Existing requests keep their assigned approvers and require a deliberate reassignment if an approver leaves.
 
-The browser only reads requests and timelines it is allowed to see. PostgreSQL functions validate mutations, enforce stage order, and record a delivery item in the same transaction as the action.
+Employees follow updates in **My requests**. Supervisors and HRD check **Approval inbox** for requests awaiting a decision. The browser only reads requests and timelines it is allowed to see. PostgreSQL functions validate mutations, enforce stage order, and record a delivery item in the same transaction as the action.
 
 ## Deploy the frontend
 
@@ -40,12 +40,12 @@ Push the source to your GitHub repository. Import the repository into Vercel. Th
 | `PUBLIC_SUPABASE_URL` | Your HTTPS Supabase project URL |
 | `PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Your Supabase publishable key or legacy anon key |
 
-For GitHub Pages as a second frontend, select **GitHub Actions** in the repository’s Pages settings. Create repository Actions variables with the same names and run **Deploy PRF to GitHub Pages**. Both hosts use the same Supabase data. Use the Vercel URL as the canonical link in notifications, or set `APP_URL` to the GitHub Pages URL if that is the primary frontend. [Vercel project configuration](https://vercel.com/docs/project-configuration) · [GitHub Pages custom workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
+For GitHub Pages as a second frontend, select **GitHub Actions** in the repository’s Pages settings. Create repository Actions variables with the same names and run **Deploy PRF to GitHub Pages**. Both hosts use the same Supabase data. [Vercel project configuration](https://vercel.com/docs/project-configuration) · [GitHub Pages custom workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
 
-## Set up Sheets sync and notifications
+## Optional Sheets sync
 
 1. Create a restricted spreadsheet and a blank tab named **PRF Transactions**. Enable the Google Sheets API for your Google Cloud project and share the spreadsheet with your Google Cloud service account as an Editor. Use filter views or report formulas in another tab. The integration owns row order and positions in the transaction tab. [Google service account authorization](https://developers.google.com/identity/protocols/oauth2/service-account) · [Google Sheets batch writes](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/batchUpdate)
-2. Store the following values as **Supabase Edge Function secrets**. Keep all private keys and sender credentials out of the frontend, GitHub repository, and chat.
+2. Store the following values as **Supabase Edge Function secrets**. Keep all private keys out of the frontend, GitHub repository, and chat.
 
    | Secret | Value |
    | --- | --- |
@@ -53,11 +53,8 @@ For GitHub Pages as a second frontend, select **GitHub Actions** in the reposito
    | `GOOGLE_SPREADSHEET_ID` | Target spreadsheet ID |
    | `GOOGLE_SHEET_TAB` | Optional override for the transaction tab |
    | `PRF_SYNC_SECRET` | Random secret of at least 32 characters for the worker |
-   | `APP_URL` | HTTPS URL of the live frontend |
-   | `RESEND_API_KEY` | Notification email provider key |
-   | `PRF_FROM_EMAIL` | Verified sender address, e.g. `SCPA HRD <hrd@example.com>` |
 
 3. Deploy the worker with `supabase functions deploy sync-prf`. Add the Supabase project URL as `prf_project_url` and the same worker secret as `prf_sync_secret` in Supabase Vault. Run `supabase/schedule.sql` in the SQL Editor. Cron starts one worker per minute. [Supabase scheduling](https://supabase.com/docs/guides/functions/schedule-functions)
-4. Submit a test request, return and resubmit it, then approve with the supervisor and HRD accounts. Check the PRF, timeline, emails, and transaction sheet before inviting the whole company. Recent worker failures appear in `public.delivery_queue.last_error` for the database administrator.
+4. Submit a test request, return and resubmit it, then approve with the supervisor and HRD accounts. Check the PRF, timeline, and transaction sheet before inviting the whole company. Recent worker failures appear in `public.delivery_queue.last_error` for the database administrator.
 
-The worker writes each event to a fixed row based on the event ID and retries failed deliveries. A Sheets or email outage can delay delivery while request submission and approvals continue. Notification recipients are the next approver or, for returns and final decisions, the requester.
+The worker writes each event to a fixed row based on the event ID and retries failed deliveries. A Sheets outage can delay spreadsheet writes while request submissions and approvals continue.
