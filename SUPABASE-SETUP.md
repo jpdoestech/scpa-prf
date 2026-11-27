@@ -21,6 +21,21 @@ The worker uses `PRF_SYNC_SECRET` and the matching `prf_sync_secret` in Vault. V
 3. Save the entire JSON as `GOOGLE_SERVICE_ACCOUNT_JSON` and the ID between `/d/` and `/edit` in the spreadsheet URL as `GOOGLE_SPREADSHEET_ID`. The optional `GOOGLE_SHEET_TAB` defaults to `PRF Transactions`. [Edge Function secrets](https://supabase.com/dashboard/project/crstiwhylwumglbjxwbo/functions/secrets)
 4. Once the Sheets secrets are ready, install the once-per-minute schedule. Production already has the Sheets-only migration and the updated worker. [Sheets-only migration](supabase/migrations/202611270002_prf_sheets_only.sql) · [Schedule SQL](supabase/schedule.sql) · [SQL Editor](https://supabase.com/dashboard/project/crstiwhylwumglbjxwbo/sql/new)
 
+## Automatic production deployment
+
+1. Add the following as GitHub Actions **repository secrets**. Enter the values directly in GitHub. [Repository Actions secrets](https://github.com/jpdoestech/scpa-prf/settings/secrets/actions)
+
+   | Secret | Value |
+   | --- | --- |
+   | `SUPABASE_ACCESS_TOKEN` | A Supabase personal access token with access to the production project and permission to link, check the database, and deploy Edge Functions |
+   | `SUPABASE_DB_PASSWORD` | The production PostgreSQL database password |
+
+   [Supabase access tokens](https://supabase.com/dashboard/account/tokens) · [Supabase CI/CD setup](https://supabase.com/docs/guides/deployment/managing-environments)
+
+2. In GitHub Actions, run **Deploy PRF to Supabase** from `main` with **record_existing_migrations** enabled once. Production migrations `202611270001` through `202611270005` were applied in the SQL Editor. The workflow checks the installed schema, records these versions as applied, and then runs the normal deployment. [GitHub Actions](https://github.com/jpdoestech/scpa-prf/actions/workflows/supabase.yml) · [Migration history repair](https://supabase.com/docs/reference/cli/supabase-migration-repair)
+
+Future changes to Supabase migrations, functions, or function configuration pushed to `main` trigger deployment automatically. The workflow applies migrations before deploying Edge Functions. Vercel continues to deploy the frontend from GitHub.
+
 ## Production checks
 
 - User administration uses the [PRF provisioning migration](supabase/migrations/202611270003_prf_admin_provisioning.sql) and the `prf-admin` Edge Function. Grant access only to a verified Auth account through server-managed `app_metadata.prf_super_admin`. Never use editable user metadata for this grant. Record dashboard-applied migrations in the CLI ledger before the next `supabase db push`. [Supabase migration repair](https://supabase.com/docs/guides/deployment/database-migrations)
