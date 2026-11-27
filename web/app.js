@@ -216,7 +216,7 @@ function renderUserRows(term = '') {
   }).join('') : '<li class="empty" role="row"><span role="cell">No accounts match your search.</span></li>';
 }
 
-function renderAccountForm(account, approvers, branches) {
+function renderAccountForm(account, approvers, branches, branchField) {
   const creating = !account;
   const current = account ?? {};
   const selected = (key, value) => current[key] === value ? 'selected' : '';
@@ -242,10 +242,12 @@ function renderAccountForm(account, approvers, branches) {
         <div class="field-grid">
           ${field('account-name', 'Full name', `<input name="name" value="${escape(current.name)}" maxlength="100" required>`)}
           ${creating ? field('account-email', 'Email', '<input type="email" name="email" maxlength="254" autocomplete="off" required>') : ''}
-          ${field('account-branch', 'Assigned branch', `<select name="branch_id" required>
+          ${field('account-branch', 'Assigned branch', `<select name="${branchField}" required>
             <option value="">Choose a branch</option>
-            ${branches.map(branch => `<option value="${escape(branch.id)}" ${selected('branch_id', branch.id)}>${escape(branch.name)}</option>`).join('')}
-          </select>${branches.length ? '' : '<small>Add a branch from Users before assigning this account.</small>'}`)}
+            ${branches.map(branch => `<option value="${escape(branch.id)}" ${selected(branchField, branch.id)}>${escape(branch.name)}</option>`).join('')}
+          </select>${branches.length ? '' : `<small>${branchField === 'branch_id'
+            ? 'Add a branch from Users before assigning this account.'
+            : 'No branches are available for assignment yet.'}</small>`}`)}
           ${field('account-role', 'Role', `<select name="role" required><option value="">Choose a role</option>${Object.entries(roleLabels).map(([id, label]) => `<option value="${id}" ${selected('role', id)}>${label}</option>`).join('')}</select>`)}
           ${creating ? '' : field('account-active', 'PRF access', `<select name="active"><option value="true"${current.active !== false ? ' selected' : ''}>Active</option><option value="false"${current.active === false ? ' selected' : ''}>Inactive</option></select>`)}
           ${approver('supervisor_id', 'Assigned supervisor', 'supervisor')}
@@ -278,10 +280,15 @@ async function openAdmin(view = '', message = '') {
   try {
     const directory = adminDirectory ?? await adminAccounts();
     if (revision !== routeRevision) return;
-    const { accounts, approvers, branches = [] } = directory;
-    if (!Array.isArray(accounts) || !Array.isArray(approvers) || !Array.isArray(branches)) {
+    const { accounts, approvers } = directory;
+    if (!Array.isArray(accounts) || !Array.isArray(approvers)) {
       throw new Error('The user directory is unavailable. Try again.');
     }
+    // The previous function returns branch names only on existing staff profiles.
+    const hasBranchDirectory = Array.isArray(directory.branches);
+    const branches = hasBranchDirectory ? directory.branches
+      : [...new Set(accounts.map(account => account.branch).filter(Boolean))].sort()
+        .map(name => ({ id: name, name }));
     adminDirectory = directory;
     managedAccounts = accounts.sort((a, b) => Number(b.superAdmin) - Number(a.superAdmin)
       || (a.name || a.email).localeCompare(b.name || b.email));
@@ -289,10 +296,10 @@ async function openAdmin(view = '', message = '') {
     if (view === 'new-branch') {
       renderFrame(renderBranchForm());
     } else if (view === 'new' || account) {
-      renderFrame(renderAccountForm(account, approvers, branches));
+      renderFrame(renderAccountForm(account, approvers, branches, hasBranchDirectory ? 'branch_id' : 'branch'));
     } else {
       renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
-        <div class="actions">${button('new-branch', 'Add branch')}${button('new-user', 'New user', 'primary', 'plus')}</div></div>
+        <div class="actions">${hasBranchDirectory ? button('new-branch', 'Add branch') : ''}${button('new-user', 'New user', 'primary', 'plus')}</div></div>
         <section class="panel users-panel" aria-label="User accounts">
           <header class="panel-header"><h2 id="user-count">Accounts</h2>
             <label class="search user-search">${icon('search')}
