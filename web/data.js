@@ -79,6 +79,17 @@ export async function context() {
   return config.demo ? demoPeople[demoRole] : unwrap(await supabase.rpc('prf_context'));
 }
 
+export async function adminAccounts(values) {
+  const result = await supabase.functions.invoke('prf-admin', values
+    ? { method: 'POST', body: values }
+    : { method: 'GET' });
+  if (result.error?.context instanceof Response) {
+    const body = await result.error.context.json().catch(() => null);
+    if (body?.error) throw new Error(body.error);
+  }
+  return unwrap(result);
+}
+
 export async function dashboard({ mode, id, status, search, page }) {
   const filters = ['', 'active', 'approved', 'closed'];
   if (config.demo) {

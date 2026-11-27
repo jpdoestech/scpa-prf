@@ -5,8 +5,8 @@
 ## Accounts and sign-in
 
 1. Keep **Allow new users to sign up** off and **Email** enabled. Use the Vercel URL as the Site URL. [Sign-in providers](https://supabase.com/dashboard/project/crstiwhylwumglbjxwbo/auth/providers) · [URL configuration](https://supabase.com/dashboard/project/crstiwhylwumglbjxwbo/auth/url-configuration)
-2. The PRF super administrator creates every account, including HRD, supervisors, employees, and any other users. In **Authentication → Users → Add user → Create new user**, enter the user's verified email and a unique initial password. Select **Auto Confirm User** if shown. Give each user their password privately. [Auth users](https://supabase.com/dashboard/project/crstiwhylwumglbjxwbo/auth/users) · [Admin account creation](https://supabase.com/docs/reference/javascript/auth-admin-createuser)
-3. Enable each user in the PRF staff table and configure their branch and approval assignments. For the first employee, assign two distinct active users as supervisor and HRD. [Provisioning example](supabase/provision-example.sql)
+2. Sign in as the PRF super administrator and open **User administration**. Create the supervisor and HRD accounts first. For each account, enter the verified email, name, branch, role, and a unique initial password. Give each user their password privately. [Live app](https://scpa-prf.vercel.app/)
+3. Create the employee and select their supervisor and HRD approver. The app creates the Auth account and active PRF profile together. Other staff can have both approvers assigned at creation if they will submit requests.
 4. HRD handles reset requests and verifies the employee's identity. The authorized PRF administrator uses the Auth user's UUID and Supabase's server-side `auth.admin.updateUserById(userId, { password: newPassword })` to set a replacement password in a trusted admin environment, then gives it privately to the employee. [Administrator password reset](https://supabase.com/docs/reference/javascript/auth-admin-updateuserbyid)
 
 Employees sign in with email and password. **My requests** shows status, the next approver, and dated comments. Supervisors and HRD check **Approval inbox** for work awaiting them. The pilot requires no email service.
@@ -22,5 +22,5 @@ The worker uses `PRF_SYNC_SECRET` and the matching `prf_sync_secret` in Vault. V
 
 ## Production checks
 
-- Migrations `202611270001` and `202611270002` were applied through the SQL Editor. Record both as applied in the CLI ledger before the next `supabase db push`. [Base migration](supabase/migrations/202611270001_prf.sql) · [Supabase migration repair](https://supabase.com/docs/guides/deployment/database-migrations)
+- User administration uses the [PRF provisioning migration](supabase/migrations/202611270003_prf_admin_provisioning.sql) and the `prf-admin` Edge Function. Grant access only to a verified Auth account through server-managed `app_metadata.prf_super_admin`. Never use editable user metadata for this grant. Record dashboard-applied migrations in the CLI ledger before the next `supabase db push`. [Supabase migration repair](https://supabase.com/docs/guides/deployment/database-migrations)
 - After provisioning, test all three sign-ins. Submit a labeled test request and exercise return, resubmission, and both approvals. Use a second test request for disapproval. Verify in-app status, permissions, and one-page printing in A4 and Letter. Check the transaction rows if Sheets sync is enabled. [Live app](https://scpa-prf.vercel.app/)

@@ -1,4 +1,4 @@
-import { config, supabase, context, dashboard, record, submit, decide, setDemoRole, currentDemoRole, pageSize } from './data.js';
+import { config, supabase, context, adminAccounts, dashboard, record, submit, decide, setDemoRole, currentDemoRole, pageSize } from './data.js';
 import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, day, dateTime } from './model.js';
 import { preparePrint } from './print.js';
 
@@ -73,9 +73,10 @@ function renderFrame(content) {
   app.setAttribute('aria-busy', 'false');
   const nav = (name, label, glyph) => `<button data-action="${name}" ${screen === name ? 'aria-current="page"' : ''}>${icon(glyph)}${label}</button>`;
   app.innerHTML = `<div class="frame"><aside class="sidebar">${logo}
-    <nav class="nav" aria-label="Main navigation">${nav('requests', 'My requests', 'list')}
+    <nav class="nav" aria-label="Main navigation">${person.adminOnly ? '' : `${nav('requests', 'My requests', 'list')}
       ${person.approver ? nav('inbox', 'Approval inbox', 'inbox') : ''}
-      ${nav('new', 'New request', 'plus')}</nav>
+      ${nav('new', 'New request', 'plus')}`}
+      ${person.superAdmin ? nav('admin', 'User administration', 'list') : ''}</nav>
   </aside><div class="page">
     <header class="page-top"><div class="account">
       ${config.demo ? `<span class="demo-tag">Demo</span><select id="demo-role" aria-label="Demo role">
@@ -169,6 +170,42 @@ function goList(mode = 'requests') {
 
 const field = (name, label, html, opts = '') =>
   `<label class="field ${opts}" id="field-${name}">${label}${html}</label>`;
+
+async function openAdmin() {
+  const revision = ++routeRevision;
+  screen = 'admin';
+  renderFrame('<div class="heading"><h1>User administration</h1></div><p role="status">Loading approvers…</p>');
+  try {
+    const { approvers } = await adminAccounts();
+    if (revision !== routeRevision) return;
+    const approver = (name, label, role) => field(name, label, `<select name="${name}">
+      <option value="">Choose an approver</option>
+      ${approvers.filter(p => p.account_role === role).map(p =>
+        `<option value="${escape(p.id)}">${escape(p.name)}</option>`).join('')}
+    </select>`);
+    renderFrame(`<div class="heading"><div><h1>User administration</h1>
+      <p>Create the supervisor and HRD accounts first, then assign them to employees.</p></div></div>
+      <section class="panel panel-content"><h2>Create account</h2>
+      <form id="admin-form" class="sheet"><div class="field-grid">
+        ${field('account-name', 'Full name', '<input name="name" maxlength="100" required>')}
+        ${field('account-email', 'Email', '<input type="email" name="email" maxlength="254" autocomplete="off" required>')}
+        ${field('account-branch', 'Branch or office', '<input name="branch" maxlength="100" required>')}
+        ${field('account-role', 'Role', `<select name="role" required>
+          <option value="">Choose a role</option><option value="supervisor">Supervisor</option>
+          <option value="hrd">HRD approver</option><option value="employee">Employee</option>
+          <option value="other">Other staff</option></select>`)}
+        ${approver('supervisor_id', 'Assigned supervisor', 'supervisor')}
+        ${approver('hrd_id', 'Assigned HRD approver', 'hrd')}
+        ${field('account-password', 'Initial password', '<input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="72" required><small>Use at least 12 characters. Give this password to the user privately.</small>', 'wide')}
+      </div><div class="actions"><button class="button primary" data-mutation>Create account</button></div></form></section>`);
+  } catch (err) {
+    if (revision === routeRevision) {
+      renderFrame('<div class="heading"><h1>User administration</h1></div>' + button('admin', 'Try again'));
+      banner(err.message, true);
+    }
+  }
+}
+
 function formView() {
   const values = edit?.form ?? {};
   const val = name => escape(values[name]);
@@ -313,8 +350,13 @@ async function start() {
     }
   }
   try {
-    person = await context();
+    const profile = await context();
+    const user = supabase ? (await supabase.auth.getUser()).data.user : null;
+    const superAdmin = Boolean(user?.email_confirmed_at && user.app_metadata.prf_super_admin === true);
+    person = profile ? { ...profile, superAdmin } : superAdmin
+      ? { id: user.id, name: 'PRF super admin', superAdmin, adminOnly: true } : null;
     if (!person) return renderLogin('', false, true);
+    if (person.adminOnly) return openAdmin();
     const id = new URL(location.href).searchParams.get('request');
     if (id && /^[0-9a-f-]{36}$/i.test(id)) await openRecord(id, 'requests');
     else await goList();
@@ -339,6 +381,9 @@ app.addEventListener('change', async e => {
     conditionalFields();
   } else if (target.name === 'decision') {
     target.form.elements.note.required = ['return', 'disapprove'].includes(target.value);
+  } else if (target.name === 'role' && target.form?.id === 'admin-form') {
+    target.form.elements.supervisor_id.required = target.value === 'employee';
+    target.form.elements.hrd_id.required = target.value === 'employee';
   }
 });
 app.addEventListener('input', e => {
@@ -352,7 +397,9 @@ app.addEventListener('click', async e => {
   const target = e.target.closest('button[data-action]');
   if (!target || busy) return;
   const { action, id } = target.dataset;
-  if (action === 'requests' || action === 'inbox') {
+  if (action === 'admin' && person?.superAdmin) {
+    await openAdmin();
+  } else if (action === 'requests' || action === 'inbox') {
     await goList(action);
   } else if (action === 'new') {
     screenOrigin = screen === 'inbox' ? 'inbox' : 'requests';
@@ -370,6 +417,7 @@ app.addEventListener('click', async e => {
   } else if (action === 'signout') {
     const { error } = await supabase.auth.signOut({ scope: 'local' });
     if (error) return banner(error.message, true);
+    ++routeRevision;
     person = null;
     detail = null;
     edit = null;
@@ -403,6 +451,10 @@ app.addEventListener('submit', async event => {
       const { error } = await supabase.auth.signInWithPassword({ email, password: values.password });
       if (error) throw error;
       await start();
+    } else if (form.id === 'admin-form' && person?.superAdmin) {
+      const account = await adminAccounts(values);
+      await openAdmin();
+      banner(`Account created for ${account.email}.`);
     } else if (form.id === 'request-form') {
       const row = await submit({ id: pendingId, form: values, version: edit?.version });
       await openRecord(row.id, screenOrigin, edit ? 'Request resubmitted to the supervisor.' : 'Request submitted to the supervisor.');
