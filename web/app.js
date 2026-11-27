@@ -173,6 +173,7 @@ const field = (name, label, html, opts = '') =>
 
 
 let managedAccounts = [];
+let adminDirectory;
 let adminListPosition = 0;
 let adminSearch = '';
 let adminLauncher = '';
@@ -238,10 +239,15 @@ function renderAccountForm(account, approvers) {
 async function openAdmin(view = '', message = '') {
   const revision = ++routeRevision;
   screen = 'admin';
-  renderFrame('<div class="heading"><h1>Users</h1></div><p class="empty" role="status">Loading accounts…</p>');
+  if (!adminDirectory) {
+    renderFrame('<div class="heading"><h1>Users</h1></div><p class="empty" role="status">Loading accounts…</p>');
+  }
   try {
-    const { accounts, approvers } = await adminAccounts();
+    const directory = adminDirectory ?? await adminAccounts();
     if (revision !== routeRevision) return;
+    const { accounts, approvers } = directory;
+    if (!Array.isArray(accounts) || !Array.isArray(approvers)) throw new Error('The user directory is unavailable. Try again.');
+    adminDirectory = directory;
     managedAccounts = accounts.sort((a, b) => Number(b.superAdmin) - Number(a.superAdmin)
       || (a.name || a.email).localeCompare(b.name || b.email));
     const account = managedAccounts.find(a => a.id === view);
@@ -510,6 +516,7 @@ app.addEventListener('click', async e => {
     ++routeRevision;
     person = null;
     managedAccounts = [];
+    adminDirectory = null;
     adminSearch = '';
     adminListPosition = 0;
     adminLauncher = '';
@@ -548,6 +555,7 @@ app.addEventListener('submit', async event => {
     } else if (['admin-form', 'admin-form-reset'].includes(form.id) && person?.superAdmin) {
       const account = await adminAccounts(values);
       adminDirty = false;
+      if (values.action !== 'reset') adminDirectory = null;
       if (values.action === 'save' && values.account_id === person.id) {
         const profile = await context();
         person = profile ? { ...profile, superAdmin: true }
