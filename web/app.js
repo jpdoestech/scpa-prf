@@ -216,7 +216,7 @@ function renderUserRows(term = '') {
   }).join('') : '<li class="empty" role="row"><span role="cell">No accounts match your search.</span></li>';
 }
 
-function renderAccountForm(account, approvers) {
+function renderAccountForm(account, approvers, branches) {
   const creating = !account;
   const current = account ?? {};
   const selected = (key, value) => current[key] === value ? 'selected' : '';
@@ -242,7 +242,10 @@ function renderAccountForm(account, approvers) {
         <div class="field-grid">
           ${field('account-name', 'Full name', `<input name="name" value="${escape(current.name)}" maxlength="100" required>`)}
           ${creating ? field('account-email', 'Email', '<input type="email" name="email" maxlength="254" autocomplete="off" required>') : ''}
-          ${field('account-branch', 'Branch or office', `<input name="branch" value="${escape(current.branch)}" maxlength="100" required>`)}
+          ${field('account-branch', 'Assigned branch', `<select name="branch_id" required>
+            <option value="">Choose a branch</option>
+            ${branches.map(branch => `<option value="${escape(branch.id)}" ${selected('branch_id', branch.id)}>${escape(branch.name)}</option>`).join('')}
+          </select>${branches.length ? '' : '<small>Add a branch from Users before assigning this account.</small>'}`)}
           ${field('account-role', 'Role', `<select name="role" required><option value="">Choose a role</option>${Object.entries(roleLabels).map(([id, label]) => `<option value="${id}" ${selected('role', id)}>${label}</option>`).join('')}</select>`)}
           ${creating ? '' : field('account-active', 'PRF access', `<select name="active"><option value="true"${current.active !== false ? ' selected' : ''}>Active</option><option value="false"${current.active === false ? ' selected' : ''}>Inactive</option></select>`)}
           ${approver('supervisor_id', 'Assigned supervisor', 'supervisor')}
@@ -254,6 +257,18 @@ function renderAccountForm(account, approvers) {
     </div>`;
 }
 
+function renderBranchForm() {
+  return `${button('admin', 'Back to users', 'ghost back')}
+    <div class="heading"><h1 tabindex="-1">Add branch</h1></div>
+    <section class="panel panel-content admin-editor branch-editor">
+      <form id="admin-form-branch" class="sheet">
+        <input type="hidden" name="action" value="create-branch">
+        ${field('branch-name', 'Branch name', '<input name="branch_name" maxlength="100" required>')}
+        <div class="actions"><button class="button primary" data-mutation>Add branch</button></div>
+      </form>
+    </section>`;
+}
+
 async function openAdmin(view = '', message = '') {
   const revision = ++routeRevision;
   screen = 'admin';
@@ -263,17 +278,21 @@ async function openAdmin(view = '', message = '') {
   try {
     const directory = adminDirectory ?? await adminAccounts();
     if (revision !== routeRevision) return;
-    const { accounts, approvers } = directory;
-    if (!Array.isArray(accounts) || !Array.isArray(approvers)) throw new Error('The user directory is unavailable. Try again.');
+    const { accounts, approvers, branches = [] } = directory;
+    if (!Array.isArray(accounts) || !Array.isArray(approvers) || !Array.isArray(branches)) {
+      throw new Error('The user directory is unavailable. Try again.');
+    }
     adminDirectory = directory;
     managedAccounts = accounts.sort((a, b) => Number(b.superAdmin) - Number(a.superAdmin)
       || (a.name || a.email).localeCompare(b.name || b.email));
     const account = managedAccounts.find(a => a.id === view);
-    if (view === 'new' || account) {
-      renderFrame(renderAccountForm(account, approvers));
+    if (view === 'new-branch') {
+      renderFrame(renderBranchForm());
+    } else if (view === 'new' || account) {
+      renderFrame(renderAccountForm(account, approvers, branches));
     } else {
       renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
-        ${button('new-user', 'New user', 'primary', 'plus')}</div>
+        <div class="actions">${button('new-branch', 'Add branch')}${button('new-user', 'New user', 'primary', 'plus')}</div></div>
         <section class="panel users-panel" aria-label="User accounts">
           <header class="panel-header"><h2 id="user-count">Accounts</h2>
             <label class="search user-search">${icon('search')}
@@ -290,7 +309,7 @@ async function openAdmin(view = '', message = '') {
     if (view) app.querySelector('h1')?.focus({ preventScroll: true });
     else if (adminLauncher) {
       const launcher = [...app.querySelectorAll('button[data-action]')].find(node =>
-        node.dataset.id === adminLauncher || (adminLauncher === 'new' && node.dataset.action === 'new-user'));
+        node.dataset.id === adminLauncher || node.dataset.action === adminLauncher);
       launcher?.focus({ preventScroll: true });
     } else app.querySelector('h1')?.focus({ preventScroll: true });
   } catch (err) {
@@ -507,8 +526,12 @@ app.addEventListener('click', async e => {
     await openAdmin();
   } else if (action === 'new-user' && person?.superAdmin) {
     adminListPosition = window.scrollY;
-    adminLauncher = 'new';
+    adminLauncher = 'new-user';
     await openAdmin('new');
+  } else if (action === 'new-branch' && person?.superAdmin) {
+    adminListPosition = window.scrollY;
+    adminLauncher = 'new-branch';
+    await openAdmin('new-branch');
   } else if (action === 'manage-user' && person?.superAdmin) {
     adminListPosition = window.scrollY;
     adminLauncher = id;
@@ -578,7 +601,7 @@ app.addEventListener('submit', async event => {
       const { error } = await supabase.auth.signInWithPassword({ email, password: values.password });
       if (error) throw error;
       await start();
-    } else if (['admin-form', 'admin-form-reset'].includes(form.id) && person?.superAdmin) {
+    } else if (['admin-form', 'admin-form-branch', 'admin-form-reset'].includes(form.id) && person?.superAdmin) {
       const account = await adminAccounts(values);
       adminDirty = false;
       if (values.action !== 'reset') adminDirectory = null;
@@ -587,7 +610,8 @@ app.addEventListener('submit', async event => {
         person = profile ? { ...profile, superAdmin: true }
           : { id: person.id, name: 'PRF super admin', superAdmin: true, adminOnly: true };
       }
-      if (values.action === 'create') await openAdmin('', `Account created for ${account.email}.`);
+      if (values.action === 'create-branch') await openAdmin('', `Added branch ${account.branch.name}.`);
+      else if (values.action === 'create') await openAdmin('', `Account created for ${account.email}.`);
       else if (values.action === 'reset') await openAdmin(values.account_id, 'Password reset.');
       else await openAdmin(values.account_id, 'PRF profile saved.');
     } else if (form.id === 'request-form') {

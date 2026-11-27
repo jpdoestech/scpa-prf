@@ -153,6 +153,7 @@ textarea{resize:vertical}
 .users-panel .panel-header h2{font-size:.92rem}
 .admin-panels{display:grid;gap:1rem;align-items:start}
 .admin-editor h2{margin-bottom:1rem}
+.branch-editor{max-width:31rem}
 .admin-editor .actions{padding-top:.8rem;border-top:1px solid var(--line)}
 @media(min-width:920px){
   .user-row{grid-template-columns:minmax(0,2fr) minmax(5rem,1fr) minmax(5rem,1fr) minmax(6rem,.9fr) 5.4rem}

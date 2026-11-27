@@ -27,6 +27,9 @@ Deno.serve(async (req: Request) => {
   }
 
   if (req.method === 'GET') {
+    const { data: branches, error: branchError } = await db.from('branches').select('id,name').order('name');
+    if (branchError) return reply({ error: 'Could not load branches.' }, 500);
+    const branchNames = new Map(branches.map(branch => [branch.id, branch.name]));
     const accounts = [];
     for (let page: number | null = 1; page; ) {
       const { data, error } = await db.auth.admin.listUsers({ page, perPage: 100 });
@@ -34,7 +37,7 @@ Deno.serve(async (req: Request) => {
       const ids = data.users.map(account => account.id);
       if (!ids.length) break;
       const { data: profiles, error: profileError } = await db.from('staff')
-        .select('id,name,account_role,active,supervisor_override,hrd_override,branches!staff_branch_id_fkey(name)').in('id', ids);
+        .select('id,name,account_role,active,branch_id,supervisor_override,hrd_override').in('id', ids);
       if (profileError) return reply({ error: 'Could not load PRF staff profiles.' }, 500);
       const byId = new Map(profiles.map(profile => [profile.id, profile]));
       for (const account of data.users) {
@@ -42,14 +45,15 @@ Deno.serve(async (req: Request) => {
         accounts.push({
           id: account.id, email: account.email ?? '', name: profile?.name ?? '',
           role: profile?.account_role ?? '', active: profile?.active ?? null,
-          branch: (profile?.branches as unknown as { name: string } | null)?.name ?? '',
+          branch_id: profile?.branch_id ?? '',
+          branch: branchNames.get(profile?.branch_id) ?? '',
           supervisor_id: profile?.supervisor_override ?? '', hrd_id: profile?.hrd_override ?? '',
           superAdmin: account.app_metadata.prf_super_admin === true,
         });
       }
       page = data.nextPage;
     }
-    return reply({ accounts, approvers: accounts.filter(account => account.active && ['supervisor', 'hrd'].includes(account.role))
+    return reply({ accounts, branches, approvers: accounts.filter(account => account.active && ['supervisor', 'hrd'].includes(account.role))
       .map(({ id, name, role }) => ({ id, name, account_role: role })) });
   }
 
@@ -59,6 +63,14 @@ Deno.serve(async (req: Request) => {
   }
 
   const action = values.action ?? 'create';
+  if (action === 'create-branch') {
+    const branchName = text(values.branch_name);
+    if (!branchName || branchName.length > 100) return reply({ error: 'Enter a branch name of 1 to 100 characters.' }, 400);
+    const { data, error } = await db.rpc('prf_create_branch', { branch_name: branchName });
+    if (error?.code === 'P0001' || error?.code === '23505') return reply({ error: 'That branch already exists.' }, 409);
+    if (error) return reply({ error: 'Could not add this branch.' }, 500);
+    return reply({ branch: data }, 201);
+  }
   if (!['create', 'save', 'reset'].includes(action)) return reply({ error: 'Unsupported action.' }, 400);
   const id = text(values.account_id);
   const password = typeof values.password === 'string' ? values.password : '';
@@ -81,22 +93,31 @@ Deno.serve(async (req: Request) => {
 
   const email = text(values.email).toLowerCase();
   const name = text(values.name);
-  const branch = text(values.branch);
+  const branchId = text(values.branch_id);
+  const previousBranch = text(values.branch);
   const role = text(values.role);
   const active = action === 'create' || values.active === 'true';
   const supervisor_id = text(values.supervisor_id) || null;
   const hrd_id = text(values.hrd_id) || null;
   if ((action === 'create' && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)) ||
-    !name || name.length > 100 || !branch || branch.length > 100 || !roles.includes(role)
+    !name || name.length > 100 || !roles.includes(role)
     || (action === 'save' && !['true', 'false'].includes(values.active))) {
-    return reply({ error: 'Enter a valid email, name, branch, and role.' }, 400);
+    return reply({ error: 'Enter a valid email, name, and role.' }, 400);
+  }
+  if (!(branchId || previousBranch) || branchId.length > 100 || previousBranch.length > 100) {
+    return reply({ error: 'Choose an existing branch.' }, 400);
   }
   if (Boolean(supervisor_id) !== Boolean(hrd_id) || (active && role === 'employee' && !supervisor_id)
     || (supervisor_id && hrd_id &&
       (!uuid.test(supervisor_id) || !uuid.test(hrd_id) || supervisor_id === hrd_id || id === supervisor_id || id === hrd_id))) {
     return reply({ error: 'Choose two distinct approvers.' }, 400);
   }
-  const profile = { name, branch, role, active, supervisor_id, hrd_id };
+  // Older clients may still send a branch name. Both paths must resolve an existing branch.
+  const { data: branch, error: branchError } = await db.from('branches').select('name')
+    .eq(branchId ? 'id' : 'name', branchId || previousBranch).maybeSingle();
+  if (branchError) return reply({ error: 'Could not check the selected branch.' }, 500);
+  if (!branch) return reply({ error: 'Choose an existing branch.' }, 400);
+  const profile = { name, branch: branch.name, role, active, supervisor_id, hrd_id };
   if (action === 'save') {
     const { error } = await db.rpc('prf_save_staff', { user_id: id, profile });
     if (error?.code === 'P0001') return reply({ error: error.message }, 409);
