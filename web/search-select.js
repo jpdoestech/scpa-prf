@@ -72,15 +72,14 @@ export function enhanceSelects(root) {
       const viewport = window.visualViewport;
       const above = rect.top - (viewport?.offsetTop ?? 0) - 12;
       const below = (viewport ? viewport.height + viewport.offsetTop : window.innerHeight) - rect.bottom - 12;
-      const preferUp = select.id === 'rows-per-page';
-      const up = (preferUp || below < 180) && above > below;
+      const up = below < 180 && above > below;
       menu.classList.toggle('select-menu-up', up);
       menu.style.maxHeight = `${Math.max(72, Math.min(up ? above : below, 272))}px`;
     }
 
     function render(query = '') {
       const term = query.trim().toLowerCase();
-      matches = [...select.options].filter(option => !option.disabled
+      matches = [...select.options].filter(option => !option.disabled && !option.hidden
         && (!select.required || option.value) && option.label.toLowerCase().includes(term));
       list.replaceChildren(...matches.map((option, index) => {
         const item = document.createElement('div');

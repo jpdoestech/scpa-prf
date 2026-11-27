@@ -140,6 +140,16 @@ export async function requestOptions() {
   return demoOptions;
 }
 
+export async function optionDirectory(kind) {
+  return unwrap(await supabase.rpc('prf_option_directory', { option_kind: kind }));
+}
+
+export async function editRequestOption(kind, id, action, name = null) {
+  unwrap(await supabase.rpc('prf_edit_request_option', {
+    option_kind: kind, option_id: id, option_action: action, option_name: name,
+  }));
+}
+
 export async function addRequestOption(kind, name) {
   if (!config.demo) return unwrap(await supabase.rpc('prf_add_request_option', {
     option_kind: kind, option_name: name,

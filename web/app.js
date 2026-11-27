@@ -1,4 +1,4 @@
-import { config, supabase, context, adminAccounts, dashboard, pendingApprovals, record, requestOptions, addRequestOption, submit, decide, setDemoRole, currentDemoRole, pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto } from './data.js';
+import { config, supabase, context, adminAccounts, dashboard, pendingApprovals, record, requestOptions, optionDirectory, editRequestOption, addRequestOption, submit, decide, setDemoRole, currentDemoRole, pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto } from './data.js';
 import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, day, dateTime } from './model.js';
 import { exportPrintPng, preparePrint } from './print.js';
 import { enhanceSelects, focusSelect } from './search-select.js';
@@ -63,6 +63,9 @@ let pendingId;
 let paper = 'A4';
 let searchTimer;
 let requestListReturn;
+const optionKinds = { branch: 'Branch', position: 'Position title', area: 'Assigned area' };
+let optionKind = 'branch';
+let optionOrigin;
 const printPreview = document.getElementById('print-preview');
 let printReturn;
 const canCopyImage = Boolean(navigator.clipboard?.write && window.ClipboardItem);
@@ -161,7 +164,7 @@ function renderLogin(message = '', error = false, inactive = false) {
 
 function renderFrame(content) {
   app.setAttribute('aria-busy', 'false');
-  const section = ['detail', 'new'].includes(screen) ? screenOrigin : screen;
+  const section = ['detail', 'new'].includes(screen) ? screenOrigin : screen === 'options' ? optionOrigin?.mode : screen;
   const nav = (name, label, glyph) => `<button data-action="${name}" ${section === name ? 'aria-current="page"' : ''}
     ${name === 'inbox' ? 'aria-describedby="pending-approval-summary"' : ''}>${icon(glyph)}<span>${label}</span>
     ${name === 'inbox' ? '<span id="pending-approval-count" class="pending-count" aria-hidden="true" hidden></span>' : ''}
@@ -182,7 +185,7 @@ function renderFrame(content) {
         ${button('signout', '', 'secondary signout', 'exit', 'aria-label="Sign out" title="Sign out"')}`}
     </div></header>
   </aside><div class="page" data-density="${compact ? 'compact' : 'comfortable'}">
-    <div id="notice" role="status" class="notice" hidden></div>
+    <div id="notice" role="status" class="notice" tabindex="-1" hidden></div>
     ${content}
   </div>${button('scroll-top', '', 'scroll-top', 'up', 'aria-label="Back to top" title="Back to top" hidden')}</div>`;
   syncScrollTop();
@@ -240,7 +243,7 @@ const statusOptions = { '': 'All statuses', active: 'In review', ...statuses };
 const densityButton = () => button('density', 'Compact', 'secondary density', 'compact', `aria-pressed="${compact}"`);
 function pagination() {
   return `<nav class="pagination" aria-label="Request pagination" hidden>
-    <label class="page-size"><span>Rows<span class="page-label-extra"> per page</span></span> <select id="rows-per-page">${pageSizes.map(size =>
+    <label class="page-size"><span>Rows<span class="page-label-extra"> per page</span></span> <select id="rows-per-page" data-native-select>${pageSizes.map(size =>
       `<option value="${size}" ${rowsPerPage === size ? 'selected' : ''}>${size}</option>`).join('')}</select></label>
     <div class="page-navigation"><span id="row-range" role="status"></span>
       ${button('previous', '', 'secondary page-step', 'previous', 'aria-label="Previous page" title="Previous page" disabled')}
@@ -253,7 +256,8 @@ function listView() {
   const inbox = screen === 'inbox';
   renderFrame(`<div class="heading register-heading">
     <h1 tabindex="-1">${inbox ? 'Approval inbox' : 'My requests'}</h1>
-    ${inbox || person.adminOnly ? '' : button('new', 'New request', 'primary', 'plus')}
+    <div class="actions">${person.canManageOptions ? button('request-options', 'Request options', 'secondary', 'list') : ''}
+      ${inbox || person.adminOnly ? '' : button('new', 'New request', 'primary', 'plus')}</div>
     </div>
     ${person.adminOnly ? `<section class="panel panel-content profile-setup">
       <h2>Set up your staff profile</h2><p>${inbox
@@ -395,6 +399,8 @@ function renderUserRows(term = '') {
 function renderAccountForm(account, approvers, branches, branchField) {
   const creating = !account;
   const current = account ?? {};
+  const choices = branches.filter(branch => branch.active !== false);
+  const inactiveBranch = branches.find(branch => branch.active === false && branch.id === current[branchField]);
   const selected = (key, value) => current[key] === value ? 'selected' : '';
   const approver = (name, label, role) => {
     const options = approvers.filter(p => p.account_role === role && p.id !== current.id);
@@ -420,8 +426,9 @@ function renderAccountForm(account, approvers, branches, branchField) {
           ${creating ? field('account-email', 'Email', '<input type="email" name="email" maxlength="254" autocomplete="off" required>') : ''}
           ${field('account-branch', 'Assigned branch', `<select name="${branchField}" required>
             <option value="">Choose a branch</option>
-            ${branches.map(branch => `<option value="${escape(branch.id)}" ${selected(branchField, branch.id)}>${escape(branch.name)}</option>`).join('')}
-          </select>${branches.length ? '' : `<small>${branchField === 'branch_id'
+            ${inactiveBranch ? `<option value="${escape(inactiveBranch.id)}" selected hidden>${escape(inactiveBranch.name)} (inactive)</option>` : ''}
+            ${choices.map(branch => `<option value="${escape(branch.id)}" ${selected(branchField, branch.id)}>${escape(branch.name)}</option>`).join('')}
+          </select>${choices.length || inactiveBranch ? '' : `<small>${branchField === 'branch_id'
             ? 'Add a branch from Users before assigning this account.'
             : 'No branches are available for assignment yet.'}</small>`}`)}
           ${field('account-role', 'Role', `<select name="role" required><option value="">Choose a role</option>${Object.entries(roleLabels).map(([id, label]) => `<option value="${id}" ${selected('role', id)}>${label}</option>`).join('')}</select>`)}
@@ -476,7 +483,7 @@ async function openAdmin(view = '', message = '') {
     } else {
       renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
         <div class="actions">${hasBranchDirectory ? button('new-branch', 'Add branch', 'secondary', 'plus') : ''}
-          ${person.adminOnly ? button('request-options', 'Request options', 'secondary', 'list') : ''}
+          ${button('request-options', 'Request options', 'secondary', 'list')}
           ${button('new-user', 'New user', 'primary', 'plus')}</div></div>
         <section class="panel users-panel" aria-label="User accounts">
           <header class="panel-header"><h2 id="user-count" aria-live="polite">Accounts</h2>
@@ -509,12 +516,14 @@ async function openAdmin(view = '', message = '') {
 }
 
 function requestOptionField(kind, label, addLabel, names, selected) {
-  const choices = [...new Set([...names, ...(selected ? [selected] : [])])].sort((a, b) => a.localeCompare(b));
+  const choices = [...new Set([...names, ...(config.demo && selected ? [selected] : [])])].sort((a, b) => a.localeCompare(b));
+  const selectedName = choices.includes(selected) ? selected
+    : choices.find(name => name.toLowerCase() === selected?.toLowerCase());
   const id = `request-option-${kind}`;
   return `<div class="request-option" data-option="${kind}">
     <label class="field" for="${id}">${label}
       <select name="${kind}" id="${id}" required><option value="">Select an option</option>
-        ${choices.map(name => `<option value="${escape(name)}" ${name === selected ? 'selected' : ''}>${escape(name)}</option>`).join('')}
+        ${choices.map(name => `<option value="${escape(name)}" ${name === selectedName ? 'selected' : ''}>${escape(name)}</option>`).join('')}
       </select>
     </label>
     <details><summary class="button secondary option-toggle">${icon('plus')}${addLabel}</summary>
@@ -707,14 +716,52 @@ async function startRequest(row = null) {
   await loadRequestOptions(backButton('back', 'Back to requests'), 'retry-request', formView);
 }
 
-async function openRequestOptions() {
-  screen = 'admin';
-  const back = backButton('admin', 'Back to users');
-  await loadRequestOptions(back, 'request-options', options => {
-    renderFrame(`${back}<div class="heading"><h1 tabindex="-1">Request options</h1></div>
-      <section class="panel form-section"><div class="field-grid">${requestOptionFields(options)}</div></section>`);
-    app.querySelector('h1').focus({ preventScroll: true });
-  });
+async function openRequestOptions(message = '') {
+  const revision = ++routeRevision;
+  clearTimeout(searchTimer);
+  screen = 'options';
+  const label = optionKinds[optionKind];
+  const back = backButton('close-options', optionOrigin?.mode === 'admin' ? 'Back to users'
+    : optionOrigin?.mode === 'inbox' ? 'Back to approval inbox' : 'Back to requests');
+  const heading = `${back}<div class="heading"><h1 tabindex="-1">Request options</h1></div>
+    <div class="actions option-kinds" aria-label="Option categories">${Object.entries(optionKinds).map(([kind, title]) =>
+      button('option-kind', title, 'secondary density', 'list', `data-id="${kind}" aria-pressed="${kind === optionKind}"`)).join('')}</div>`;
+  const scroll = message ? window.scrollY : 0;
+  renderFrame(`${heading}<p class="empty" role="status">Loading request options…</p>`);
+  try {
+    const options = await optionDirectory(optionKind);
+    if (revision !== routeRevision) return;
+    renderFrame(`${heading}<section class="panel panel-content option-directory">
+      <form id="add-directory-option" class="option-edit-row">
+        ${field('new-directory-option', `New ${label.toLowerCase()}`, '<input name="name" maxlength="100" required>')}
+        ${submitButton(`Add ${label.toLowerCase()}`, 'plus')}
+      </form>
+      ${options.length ? `<ul class="option-rows">${options.map(option => {
+        const id = escape(option.id);
+        const name = escape(option.name);
+        return `<li class="option-entry">
+          <div class="option-entry-heading"><strong>${name}</strong><span class="badge ${option.active ? 'approved' : 'disapproved'}">${option.active ? 'Active' : 'Inactive'}</span></div>
+          <details class="option-entry-edit"><summary class="button secondary option-toggle">${icon('edit')}Rename</summary>
+            <form class="option-edit-row" data-rename-option data-id="${id}">
+              ${field(`option-${id}`, label, `<input name="name" value="${name}" maxlength="100" required>`)}
+              ${submitButton('Save name', 'check')}
+            </form>
+          </details>
+          <div class="actions">${button('edit-option', option.active ? 'Deactivate' : 'Activate', 'secondary',
+            option.active ? 'archive' : 'check', `data-id="${id}" data-option-action="${option.active ? 'deactivate' : 'activate'}" data-mutation`)}
+          ${button('edit-option', 'Delete', 'secondary option-delete', 'close',
+            `data-id="${id}" data-option-action="delete" data-name="${name}" data-mutation`)}</div>
+        </li>`;
+      }).join('')}</ul>` : '<p class="empty">No options yet.</p>'}
+    </section>`);
+    banner(message);
+    window.scrollTo(0, scroll);
+    app.querySelector(message ? '#notice' : 'h1')?.focus({ preventScroll: true });
+  } catch (err) {
+    if (revision !== routeRevision) return;
+    renderFrame(`${heading}${button('request-options', 'Try again', 'secondary', 'retry')}`);
+    banner(err.message, true);
+  }
 }
 
 async function loadRequestOptions(back, retry, render) {
@@ -852,6 +899,7 @@ app.addEventListener('click', async e => {
     const previous = profileReturn;
     profileReturn = null;
     if (previous?.mode === 'detail') await openRecord(previous.id);
+    else if (previous?.mode === 'options') await openRequestOptions();
     else if (previous?.mode === 'admin' || person.adminOnly) await openAdmin();
     else {
       requestListReturn = previous;
@@ -861,8 +909,39 @@ app.addEventListener('click', async e => {
     await saveRequestOption(target);
   } else if (action === 'admin' && person?.superAdmin) {
     await openAdmin();
-  } else if (action === 'request-options' && person?.adminOnly) {
+  } else if (action === 'request-options' && (person?.superAdmin || person?.canManageOptions)) {
+    if (screen !== 'options') {
+      optionOrigin = { mode: screen, page, filter, inboxStatus, search, scroll: window.scrollY };
+      optionKind = 'branch';
+    }
     await openRequestOptions();
+  } else if (action === 'option-kind' && Object.hasOwn(optionKinds, id)) {
+    optionKind = id;
+    await openRequestOptions();
+  } else if (action === 'close-options') {
+    const previous = optionOrigin;
+    optionOrigin = null;
+    if (previous?.mode === 'admin') await openAdmin();
+    else {
+      requestListReturn = previous;
+      await goList(previous?.mode === 'inbox' ? 'inbox' : 'requests', true);
+    }
+  } else if (action === 'edit-option') {
+    const optionAction = target.dataset.optionAction;
+    if (optionAction === 'delete' && !window.confirm(`Delete “${target.dataset.name}” from the dropdown? Existing requests will keep their saved values.`)) return;
+    markBusy(true);
+    banner();
+    try {
+      await editRequestOption(optionKind, id, optionAction);
+      adminDirectory = null;
+      await openRequestOptions(optionAction === 'delete' ? 'Option deleted.'
+        : optionAction === 'activate' ? 'Option activated.' : 'Option deactivated.');
+    } catch (err) {
+      banner(err.message, true);
+      document.getElementById('notice')?.scrollIntoView({ block: 'nearest' });
+    } finally {
+      markBusy(false);
+    }
   } else if (action === 'new-user' && person?.superAdmin) {
     adminListPosition = window.scrollY;
     adminLauncher = 'new-user';
@@ -918,6 +997,7 @@ app.addEventListener('click', async e => {
     person = null;
     accountUser = null;
     profileReturn = null;
+    optionOrigin = null;
     setProfilePhoto(null);
     managedAccounts = [];
     adminDirectory = null;
@@ -1008,6 +1088,14 @@ app.addEventListener('submit', async event => {
       const { error } = await supabase.auth.signInWithPassword({ email, password: values.password });
       if (error) throw error;
       await start();
+    } else if (form.id === 'add-directory-option' || form.hasAttribute('data-rename-option')) {
+      const name = values.name.trim();
+      if (!name) throw new Error('Enter an option name.');
+      const renaming = form.hasAttribute('data-rename-option');
+      if (renaming) await editRequestOption(optionKind, form.dataset.id, 'rename', name);
+      else await addRequestOption(optionKind, name);
+      adminDirectory = null;
+      await openRequestOptions(renaming ? 'Option renamed.' : 'Option added.');
     } else if (form.id === 'profile-name' && accountUser) {
       const name = values.display_name.trim();
       if (!name || name.length > 100) throw new Error('Enter a display name of 1 to 100 characters.');
