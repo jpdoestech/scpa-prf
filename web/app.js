@@ -39,6 +39,7 @@ let busy = false;
 let pendingId;
 let paper = 'A4';
 let searchTimer;
+let requestListReturn;
 
 function banner(message = '', error = false) {
   const region = document.querySelector('#notice');
@@ -71,46 +72,51 @@ function renderLogin(message = '', error = false, inactive = false) {
 
 function renderFrame(content) {
   app.setAttribute('aria-busy', 'false');
-  const nav = (name, label, glyph) => `<button data-action="${name}" ${screen === name ? 'aria-current="page"' : ''}>${icon(glyph)}${label}</button>`;
+  const section = ['detail', 'new'].includes(screen) ? screenOrigin : screen;
+  const nav = (name, label, glyph) => `<button data-action="${name}" ${section === name ? 'aria-current="page"' : ''}>${icon(glyph)}<span>${label}</span></button>`;
   app.innerHTML = `<div class="frame"><aside class="sidebar">${logo}
-    <nav class="nav" aria-label="Main navigation">${person.adminOnly ? '' : `${nav('requests', 'My requests', 'list')}
-      ${person.approver ? nav('inbox', 'Approval inbox', 'inbox') : ''}
-      ${nav('new', 'New request', 'plus')}`}
+    <nav class="nav" aria-label="Main navigation">${nav('requests', 'My requests', 'list')}
+      ${person.approver || person.superAdmin ? nav('inbox', 'Approval inbox', 'inbox') : ''}
       ${person.superAdmin ? nav('admin', 'Users', 'users') : ''}</nav>
-  </aside><div class="page">
     <header class="page-top"><div class="account">
       ${config.demo ? `<span class="demo-tag">Demo</span><select id="demo-role" aria-label="Demo role">
         ${Object.entries({ employee: 'Employee view', supervisor: 'Supervisor view', hrd: 'HRD view' })
           .map(([key, label]) => `<option value="${key}" ${key === currentDemoRole() ? 'selected' : ''}>${label}</option>`).join('')}
-      </select>` : `<span class="avatar" aria-hidden="true">${escape(initials(person.name))}</span>
-        <span>${escape(person.name)}</span>${button('signout', 'Sign out', 'ghost', 'exit')}`}
+      </select>` : `<span class="avatar account-avatar" aria-hidden="true">${escape(initials(person.name))}</span>
+        <span class="account-name">${escape(person.name)}</span>${button('signout', '<span class="signout-label">Sign out</span>', 'ghost signout', 'exit', 'aria-label="Sign out"')}`}
     </div></header>
+  </aside><div class="page">
     <div id="notice" role="status" class="notice" hidden></div>
     ${content}
   </div></div>`;
 }
 
-const groups = [['Total requests', 'list'], ['In review', 'clock'], ['Approved', 'check'], ['Returned / disapproved', 'archive']];
+const groups = ['Total', 'In review', 'Approved', 'Returned / disapproved'];
 const statusOptions = { '': 'All statuses', active: 'In review', ...statuses };
 function listView() {
   const inbox = screen === 'inbox';
-  renderFrame(`<div class="heading">
-    <div><h1>${inbox ? 'Approval inbox' : 'My requests'}</h1>
-      <p>${inbox ? 'Review requests waiting for your decision.' : 'Submit and track your personnel requisitions.'}</p></div>
-    ${button('new', 'New request', 'primary', 'plus')}
+  renderFrame(`<div class="heading register-heading">
+    <h1 tabindex="-1">${inbox ? 'Approval inbox' : 'My requests'}</h1>
+    ${inbox || person.adminOnly ? '' : button('new', 'New request', 'primary', 'plus')}
     </div>
-    ${inbox ? '' : `<section class="stats" aria-label="Request summary">${groups.map(([label, glyph], i) =>
-      `<div class="stat"><span class="stat-icon">${icon(glyph)}</span><strong id="count-${i}">–</strong><span>${label}</span></div>`).join('')}</section>`}
-    <section class="panel" aria-labelledby="requests-heading">
-      <header class="panel-header"><h2 id="requests-heading">${inbox ? 'Assigned requests' : 'Request history'}</h2>
+    ${person.adminOnly ? `<section class="panel panel-content profile-setup">
+      <h2>Set up your staff profile</h2><p>${inbox
+        ? 'Add your staff profile and have requests assigned to you as an approver.'
+        : 'Add your branch and two approvers to submit a request from this account.'}</p>
+      ${button('manage-user', 'Set up my profile', 'primary', '', `data-id="${escape(person.id)}"`)}
+    </section>` : `
+    ${inbox ? '' : `<dl class="stats" aria-label="Request summary">${groups.map((label, i) =>
+      `<div class="stat"><dt>${label}</dt><dd id="count-${i}">–</dd></div>`).join('')}</dl>`}
+    <section class="panel register" aria-label="${inbox ? 'Assigned requests' : 'Request history'}">
+      <header class="panel-header">
       <div class="filters"><label class="search">${icon('search')}<input id="search" type="search" maxlength="80" aria-label="Search requests" placeholder="Search requests" value="${escape(search)}"></label>
       ${inbox ? `<select id="filter" aria-label="Approval inbox view">
-        <option value="">Awaiting my decision</option><option value="assigned">All assigned requests</option>
+        <option value="">Awaiting my decision</option><option value="assigned" ${filter === 'assigned' ? 'selected' : ''}>All assigned requests</option>
       </select>` : `<select id="filter" aria-label="Filter by status">${Object.entries(statusOptions).map(([v, l]) =>
         `<option value="${v}" ${v === filter ? 'selected' : ''}>${l}</option>`).join('')}</select>`}
       </div></header>
       <div id="request-list" aria-live="polite"><p class="empty">Loading requests…</p></div>
-    </section>`);
+    </section>`}`);
 }
 
 function renderList() {
@@ -128,8 +134,8 @@ function renderList() {
   target.innerHTML = `<div class="list-head" aria-hidden="true"><span>PRF number</span><span>Position</span><span>Date needed</span><span>Status</span></div>
     <ul class="requests">${result.rows.map(r => `<li><button type="button" class="request-row" data-action="record" data-id="${escape(r.id)}">
       <span class="record-number">${escape(r.number)}</span>
-      <span><strong>${escape(r.form.position)}</strong><span class="muted small">${escape(screen === 'inbox' ? r.requester_name : r.form.area)}</span></span>
-      <span class="due">${escape(day(r.form.needed))}</span>${badge(r.status)}
+      <span class="request-identity"><strong>${escape(r.form.position)}</strong><span class="muted small">${escape(screen === 'inbox' ? r.requester_name : r.form.area)}</span></span>
+      <span class="due"><span class="due-label">Needed </span>${escape(day(r.form.needed))}</span>${badge(r.status)}
     </button></li>`).join('')}</ul>
     ${result.total > pageSize ? `<div class="pagination"><span class="muted small">Showing ${page * pageSize + 1}–${page * pageSize + result.rows.length} of ${result.total}</span>
       <div class="actions">${button('previous', 'Previous', 'secondary', '', page === 0 ? 'disabled' : '')}
@@ -148,24 +154,36 @@ async function refreshList() {
     result = next;
     renderList();
   } catch (err) {
-    if (revision !== listRevision) return;
+    if (revision !== listRevision || !['inbox', 'requests'].includes(screen)) return;
     const target = document.querySelector('#request-list');
-    if (target) target.innerHTML = '<p class="empty">Unable to load requests.</p>';
+    if (target) target.innerHTML = `<div class="empty">Unable to load requests. ${button('retry-list', 'Try again')}</div>`;
     banner(err.message, true);
   }
 }
 
-function goList(mode = 'requests') {
-  ++routeRevision;
+async function goList(mode = 'requests', restore = false) {
+  const revision = ++routeRevision;
+  ++listRevision;
   clearTimeout(searchTimer);
   screen = mode;
-  page = 0;
-  filter = '';
-  search = '';
+  const previous = restore && requestListReturn?.mode === mode ? requestListReturn : null;
+  requestListReturn = null;
+  page = previous?.page ?? 0;
+  filter = previous?.filter ?? '';
+  search = previous?.search ?? '';
   detail = null;
   listView();
-  window.scrollTo(0, 0);
-  return refreshList();
+  if (!previous) {
+    window.scrollTo(0, 0);
+    app.querySelector('h1')?.focus({ preventScroll: true });
+  }
+  if (!person.adminOnly) await refreshList();
+  if (previous && revision === routeRevision) {
+    window.scrollTo(0, previous.scroll);
+    const trigger = [...app.querySelectorAll('button[data-action]')].find(node =>
+      previous.id ? node.dataset.id === previous.id : node.dataset.action === 'new');
+    trigger?.focus({ preventScroll: true });
+  }
 }
 
 const field = (name, label, html, opts = '') =>
@@ -192,7 +210,7 @@ function renderUserRows(term = '') {
       <span class="user-identity" role="cell"><span class="avatar user-avatar" aria-hidden="true">${escape(initials(label))}</span>
         <span><strong>${escape(label)}</strong><small>${label === account.email ? '' : escape(account.email)}</small></span></span>
       <span class="user-role" role="cell">${account.superAdmin ? 'Super admin' : escape(roleLabels[account.role] ?? 'Unassigned')}</span>
-      <span class="user-branch" role="cell">${escape(account.branch || '—')}</span>
+      <span class="user-branch" role="cell">${escape(account.branch || 'No branch')}</span>
       <span role="cell"><span class="badge ${account.active ? 'approved' : account.active === false ? 'disapproved' : ''}">${status}</span></span>
       <span class="user-action" role="cell">${button('manage-user', 'Manage', 'secondary', '', `data-id="${escape(account.id)}" aria-label="Manage ${escape(label)}"`)}</span></li>`;
   }).join('') : '<li class="empty" role="row"><span role="cell">No accounts match your search.</span></li>';
@@ -254,8 +272,7 @@ async function openAdmin(view = '', message = '') {
     if (view === 'new' || account) {
       renderFrame(renderAccountForm(account, approvers));
     } else {
-      renderFrame(`<div class="heading admin-heading"><div><h1>Users</h1>
-        <p>Manage accounts, branch assignments, and PRF access.</p></div>
+      renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
         ${button('new-user', 'New user', 'primary', 'plus')}</div>
         <section class="panel users-panel" aria-label="User accounts">
           <header class="panel-header"><h2 id="user-count">Accounts</h2>
@@ -275,7 +292,7 @@ async function openAdmin(view = '', message = '') {
       const launcher = [...app.querySelectorAll('button[data-action]')].find(node =>
         node.dataset.id === adminLauncher || (adminLauncher === 'new' && node.dataset.action === 'new-user'));
       launcher?.focus({ preventScroll: true });
-    }
+    } else app.querySelector('h1')?.focus({ preventScroll: true });
   } catch (err) {
     if (revision === routeRevision) {
       renderFrame('<div class="heading"><h1>Users</h1></div>' + button('admin', 'Try again'));
@@ -352,7 +369,7 @@ function detailView() {
   const decision = canDecide(r, person.id);
   const mayEdit = r.requester_id === person.id && r.status === 'returned';
   renderFrame(`${button('back', screenOrigin === 'inbox' ? 'Back to approval inbox' : 'Back to requests', 'ghost back')}
-    <div class="heading"><div><p>${escape(r.number)}</p><h1>${escape(f.position)}</h1>
+    <div class="heading"><div><p>${escape(r.number)}</p><h1 tabindex="-1">${escape(f.position)}</h1>
       <div class="status-line">${badge(r.status)}${next ? `<span class="muted">Next action by ${escape(next)}</span>` : ''}</div></div>
       <div class="actions"><div class="print-choice"><select id="paper" aria-label="Paper size">
         <option ${paper === 'A4' ? 'selected' : ''}>A4</option><option ${paper === 'Letter' ? 'selected' : ''}>Letter</option>
@@ -402,6 +419,7 @@ async function openRecord(id, origin = screenOrigin, message = '') {
     if (token !== routeRevision) return;
     detail = next;
     detailView();
+    app.querySelector('h1')?.focus({ preventScroll: true });
     banner(message);
   } catch (err) {
     if (token !== routeRevision) return;
@@ -496,16 +514,21 @@ app.addEventListener('click', async e => {
     adminLauncher = id;
     await openAdmin(id);
   } else if (action === 'requests' || action === 'inbox') {
-    await goList(action);
-  } else if (action === 'new') {
-    screenOrigin = screen === 'inbox' ? 'inbox' : 'requests';
+    if (action === 'requests' || person?.approver || person?.superAdmin) await goList(action);
+  } else if (action === 'retry-list') {
+    banner();
+    await refreshList();
+  } else if (action === 'new' && !person?.adminOnly) {
+    requestListReturn = { mode: screen, page, filter, search, scroll: window.scrollY };
+    screenOrigin = 'requests';
     startRequest();
   } else if (action === 'revise') {
     startRequest(detail.row);
   } else if (action === 'back') {
     if (screen === 'new' && edit) await openRecord(edit.id);
-    else await goList(screenOrigin === 'inbox' && person.approver ? 'inbox' : 'requests');
+    else await goList(screenOrigin, true);
   } else if (action === 'record') {
+    requestListReturn = { mode: screen, id, page, filter, search, scroll: window.scrollY };
     await openRecord(id, screen);
   } else if (action === 'previous' || action === 'next') {
     page = Math.max(0, page + (action === 'next' ? 1 : -1));
@@ -514,6 +537,9 @@ app.addEventListener('click', async e => {
     const { error } = await supabase.auth.signOut({ scope: 'local' });
     if (error) return banner(error.message, true);
     ++routeRevision;
+    ++listRevision;
+    clearTimeout(searchTimer);
+    requestListReturn = null;
     person = null;
     managedAccounts = [];
     adminDirectory = null;

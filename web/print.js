@@ -2,6 +2,7 @@ import { day } from './model.js';
 
 const template = './assets/scpa-prf-template.png';
 const svgNS = 'http://www.w3.org/2000/svg';
+const printInset = 14;
 
 function svgNode(name, attributes) {
   const node = document.createElementNS(svgNS, name);
@@ -20,7 +21,9 @@ export async function preparePrint(row, paper) {
     rules.id = 'print-paper';
     document.head.append(rules);
   }
-  rules.textContent = `@page { size: ${paper === 'Letter' ? 'Letter' : 'A4'} portrait; margin: 10mm; }`;
+  // Keep the inset in the document when the browser dialog uses no margins.
+  rules.textContent = `@page { size: ${paper === 'Letter' ? 'Letter' : 'A4'} portrait; margin: 0; }
+    @media print { #print-root { padding: ${printInset}mm; } }`;
 
   const f = row.form;
   const root = document.getElementById('print-root');
@@ -109,16 +112,27 @@ export async function preparePrint(row, paper) {
     // Measure the notes at the selected paper width without moving the screen layout.
     const paperWidth = paper === 'Letter' ? 215.9 : 210;
     const paperHeight = paper === 'Letter' ? 279.4 : 297;
-    const contentWidth = paperWidth - 20;
-    const noteHeight = paperHeight - 20 - contentWidth * 465 / 552 - 7;
+    const contentWidth = paperWidth - 2 * printInset;
+    const noteHeight = paperHeight - 2 * printInset - contentWidth * 465 / 552 - 7;
     const measure = document.createElement('div');
     measure.className = 'measure-print';
     measure.style.width = `${contentWidth}mm`;
     document.body.append(measure);
     measure.append(extra);
-    for (let size = 9; size >= 6; size -= 0.5) {
+    const availableHeight = noteHeight * 96 / 25.4;
+    for (let size = 9; size >= 7; size -= 0.5) {
       extra.style.fontSize = `${size}pt`;
-      if (extra.offsetHeight <= noteHeight * 96 / 25.4) break;
+      if (extra.offsetHeight <= availableHeight) break;
+    }
+    if (extra.offsetHeight > availableHeight) {
+      extra.classList.add('compact');
+      for (let size = 9; size >= 6.5; size -= 0.5) {
+        extra.style.fontSize = `${size}pt`;
+        if (extra.offsetHeight <= availableHeight) break;
+      }
+      const notesMm = extra.offsetHeight * 25.4 / 96;
+      const formHeight = paperHeight - 2 * printInset - notesMm - 12;
+      svg.style.maxWidth = `${Math.min(contentWidth, formHeight * 552 / 465)}mm`;
     }
     root.append(extra);
     measure.remove();
