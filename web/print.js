@@ -14,6 +14,9 @@ export async function preparePrint(row, paper) {
   const picture = new Image();
   picture.src = template;
   await picture.decode();
+  const paperWidth = paper === 'Letter' ? 215.9 : 210;
+  const paperHeight = paper === 'Letter' ? 279.4 : 297;
+  document.getElementById('print-preview').style.setProperty('--paper-width', `${paperWidth}mm`);
 
   let rules = document.getElementById('print-paper');
   if (!rules) {
@@ -32,7 +35,6 @@ export async function preparePrint(row, paper) {
   const extra = document.createElement('section');
   extra.className = 'print-extra';
   root.replaceChildren(svg, extra);
-  document.body.classList.add('print-ready');
 
   const canvas = document.createElement('canvas').getContext('2d');
   function addExtra(label, value) {
@@ -110,8 +112,6 @@ export async function preparePrint(row, paper) {
     extra.remove();
   } else {
     // Measure the notes at the selected paper width without moving the screen layout.
-    const paperWidth = paper === 'Letter' ? 215.9 : 210;
-    const paperHeight = paper === 'Letter' ? 279.4 : 297;
     const contentWidth = paperWidth - 2 * printInset;
     const noteHeight = paperHeight - 2 * printInset - contentWidth * 465 / 552 - 7;
     const measure = document.createElement('div');

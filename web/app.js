@@ -1,6 +1,7 @@
-import { config, supabase, context, adminAccounts, dashboard, record, requestOptions, addRequestOption, submit, decide, setDemoRole, currentDemoRole, pageSize } from './data.js';
+import { config, supabase, context, adminAccounts, dashboard, pendingApprovals, record, requestOptions, addRequestOption, submit, decide, setDemoRole, currentDemoRole, pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto } from './data.js';
 import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, day, dateTime } from './model.js';
 import { preparePrint } from './print.js';
+import { enhanceSelects, focusSelect } from './search-select.js';
 
 const app = document.querySelector('#app');
 const paths = {
@@ -14,24 +15,43 @@ const paths = {
   archive: '<rect x="4" y="5" width="16" height="4" rx="1"/><path d="M6 9v10h12V9m-8 4h4"/>',
   print: '<path d="M7 8V4h10v4M7 16H4V9h16v7h-3m-10-2h10v6H7zM16 11h1"/>',
   exit: '<path d="M10 5H5v14h5m3-3 4-4-4-4m-4 4h8"/>',
+  enter: '<path d="M14 5h5v14h-5m-3-11 4 4-4 4m4-4H5"/>',
+  back: '<path d="m11 6-6 6 6 6M5 12h14"/>',
+  previous: '<path d="m14 6-6 6 6 6"/>',
+  next: '<path d="m10 6 6 6-6 6"/>',
+  open: '<path d="M4 12h15m-6-6 6 6-6 6"/>',
+  compact: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M4 14h16"/>',
+  edit: '<path d="m4 16-1 5 5-1L20 8l-4-4L4 16Zm9-9 4 4"/>',
+  close: '<path d="m6 6 12 12M18 6 6 18"/>',
+  retry: '<path d="M4 11a8 8 0 1 1 2 6M4 5v6h6"/>',
+  lock: '<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v2"/>',
+  send: '<path d="m3 4 18 8-18 8 3-8-3-8Zm3 8h15"/>',
+  image: '<rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 5"/>',
 };
 const icon = key => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[key]}</svg>`;
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
-const logo = `<div class="brand"><img src="./assets/scpa-logo.png" alt="SCPA" width="67" height="27"><div><strong>Personnel Requests</strong><small>Human Resources</small></div></div>`;
-const button = (name, label, style = 'secondary', glyph = '', attrs = '') =>
-  `<button class="button ${style}" type="button" data-action="${name}" ${attrs}>${glyph ? icon(glyph) : ''}${label}</button>`;
+const logo = `<div class="brand"><img src="./assets/scpa-logo.png" alt="SCPA" width="106" height="42"><strong>Personnel Request</strong></div>`;
+const button = (name, label, style, glyph, attrs = '') =>
+  `<button class="button ${style}" type="button" data-action="${name}" ${attrs}>${icon(glyph)}${label}</button>`;
+const backButton = (action, label) => button(action, label, 'secondary back', 'back');
+const submitButton = (label, glyph, style = 'primary') =>
+  `<button class="button ${style}" type="submit" data-mutation>${icon(glyph)}${label}</button>`;
 const badge = status => `<span class="badge ${escape(status)}">${escape(statuses[status])}</span>`;
 const initials = name => name.trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase()).join('');
 
 let person;
+let accountUser;
+let avatarUrl;
+let profileReturn;
 let screen = 'requests';
 let result;
 let detail;
 let edit;
 let page = 0;
 let filter = '';
+let inboxStatus = '';
 let search = '';
 let listRevision = 0;
 let routeRevision = 0;
@@ -40,6 +60,71 @@ let pendingId;
 let paper = 'A4';
 let searchTimer;
 let requestListReturn;
+const printPreview = document.getElementById('print-preview');
+let printReturn;
+let approvalCount = 0;
+let approvalRevision = 0;
+let approvalLoading = false;
+const pageSizes = [pageSize, 25, 50, 100];
+let rowsPerPage = pageSize;
+let compact = true;
+try {
+  const saved = Number(localStorage.getItem('prf-rows-per-page'));
+  if (pageSizes.includes(saved)) rowsPerPage = saved;
+  compact = localStorage.getItem('prf-table-density') !== 'comfortable';
+} catch { /* Browser preferences are optional. */ }
+
+function saveViewPreference(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* Keep the setting for this session. */ }
+}
+
+const avatarImage = () => avatarUrl ? `<img alt="" src="${escape(avatarUrl)}">` : escape(initials(person.name));
+
+function refreshProfileHeader() {
+  for (const avatar of app.querySelectorAll('[data-own-avatar]')) avatar.innerHTML = avatarImage();
+  for (const label of app.querySelectorAll('[data-own-name]')) label.textContent = person.name;
+}
+
+function setProfilePhoto(photo) {
+  if (avatarUrl) URL.revokeObjectURL(avatarUrl);
+  avatarUrl = photo ? URL.createObjectURL(photo) : undefined;
+  if (person) refreshProfileHeader();
+}
+
+const adminDisplayName = () => {
+  const name = accountUser?.user_metadata?.prf_display_name;
+  return typeof name === 'string' && name.trim() ? name.trim().slice(0, 100) : 'PRF super admin';
+};
+
+function renderApprovalCount() {
+  const badge = document.getElementById('pending-approval-count');
+  if (!badge) return;
+  const message = approvalCount === 1 ? '1 request awaiting your approval' : `${approvalCount} requests awaiting your approval`;
+  const summary = document.getElementById('pending-approval-summary');
+  if (summary.textContent === message) return;
+  badge.hidden = !approvalCount;
+  badge.textContent = approvalCount || '';
+  summary.textContent = message;
+}
+
+function resetApprovalCount() {
+  ++approvalRevision;
+  approvalLoading = false;
+  approvalCount = 0;
+}
+
+async function refreshApprovalCount(force = false) {
+  if (document.hidden || !person?.approver || (approvalLoading && !force)) return;
+  const revision = ++approvalRevision;
+  approvalLoading = true;
+  try {
+    const count = await pendingApprovals(person.id);
+    if (revision !== approvalRevision) return;
+    approvalCount = count ?? 0;
+    renderApprovalCount();
+  } catch { /* Retry on the next scheduled refresh. */ }
+  finally { if (revision === approvalRevision) approvalLoading = false; }
+}
 
 function banner(message = '', error = false) {
   const region = document.querySelector('#notice');
@@ -63,7 +148,7 @@ function renderLogin(message = '', error = false, inactive = false) {
       `<form id="login-form">
         <label class="field">Email<input type="email" name="email" autocomplete="username" required></label>
         <label class="field">Password<input type="password" name="password" autocomplete="current-password" required></label>
-        <button class="button primary" data-mutation>Sign in</button>
+        ${submitButton('Sign in', 'enter')}
         <p class="muted small">For account access or a password reset, contact your PRF administrator.</p>
       </form>`}
   </article></div></div>`;
@@ -73,26 +158,87 @@ function renderLogin(message = '', error = false, inactive = false) {
 function renderFrame(content) {
   app.setAttribute('aria-busy', 'false');
   const section = ['detail', 'new'].includes(screen) ? screenOrigin : screen;
-  const nav = (name, label, glyph) => `<button data-action="${name}" ${section === name ? 'aria-current="page"' : ''}>${icon(glyph)}<span>${label}</span></button>`;
+  const nav = (name, label, glyph) => `<button data-action="${name}" ${section === name ? 'aria-current="page"' : ''}
+    ${name === 'inbox' ? 'aria-describedby="pending-approval-summary"' : ''}>${icon(glyph)}<span>${label}</span>
+    ${name === 'inbox' ? '<span id="pending-approval-count" class="pending-count" aria-hidden="true" hidden></span>' : ''}
+  </button>`;
   app.innerHTML = `<div class="frame"><aside class="sidebar">${logo}
     <nav class="nav" aria-label="Main navigation">${nav('requests', 'My requests', 'list')}
       ${person.approver || person.superAdmin ? nav('inbox', 'Approval inbox', 'inbox') : ''}
       ${person.superAdmin ? nav('admin', 'Users', 'users') : ''}</nav>
+    ${person.approver || person.superAdmin ? '<span id="pending-approval-summary" class="sr-only" role="status"></span>' : ''}
     <header class="page-top"><div class="account">
       ${config.demo ? `<span class="demo-tag">Demo</span><select id="demo-role" aria-label="Demo role">
         ${Object.entries({ employee: 'Employee view', supervisor: 'Supervisor view', hrd: 'HRD view' })
           .map(([key, label]) => `<option value="${key}" ${key === currentDemoRole() ? 'selected' : ''}>${label}</option>`).join('')}
-      </select>` : `<span class="avatar account-avatar" aria-hidden="true">${escape(initials(person.name))}</span>
-        <span class="account-name">${escape(person.name)}</span>${button('signout', '<span class="signout-label">Sign out</span>', 'ghost signout', 'exit', 'aria-label="Sign out"')}`}
+      </select>` : `<button class="button secondary profile-button" type="button" data-action="profile" aria-label="My account"
+        ${screen === 'profile' ? 'aria-current="page"' : ''} title="My account">
+        <span class="avatar account-avatar" data-own-avatar aria-hidden="true">${avatarImage()}</span>
+        <span class="account-name" data-own-name>${escape(person.name)}</span>${icon('next')}</button>
+        ${button('signout', '', 'secondary signout', 'exit', 'aria-label="Sign out" title="Sign out"')}`}
     </div></header>
-  </aside><div class="page">
+  </aside><div class="page" data-density="${compact ? 'compact' : 'comfortable'}">
     <div id="notice" role="status" class="notice" hidden></div>
     ${content}
   </div></div>`;
+  renderApprovalCount();
+  enhanceSelects(app);
+}
+
+function openProfile() {
+  ++routeRevision;
+  ++listRevision;
+  clearTimeout(searchTimer);
+  screen = 'profile';
+  const password = (name, label, autocomplete) => field(name, label,
+    `<input type="password" name="${name}" autocomplete="${autocomplete}" required ${autocomplete === 'new-password' ? 'minlength="12" maxlength="72"' : ''}>`);
+  renderFrame(`${backButton('close-profile', 'Back to workspace')}
+    <div class="heading"><h1 tabindex="-1">My account</h1></div>
+    <div class="profile-layout">
+      <section class="panel panel-content profile-section"><h2>Personal details</h2>
+        <div class="profile-email"><span class="muted small">Sign-in email</span><strong>${escape(accountUser.email)}</strong></div>
+        <form id="profile-name" class="sheet">
+          ${field('display-name', 'Display name', `<input name="display_name" value="${escape(person.name)}" maxlength="100" autocomplete="name" required>`)}
+          <div class="actions">${submitButton('Save name', 'check')}</div>
+        </form>
+        <form id="profile-photo" class="sheet">
+          <h2>Profile picture</h2>
+          <div class="photo-settings">
+            <span class="avatar profile-avatar" data-own-avatar aria-hidden="true">${avatarImage()}</span>
+            <label class="button secondary file-picker">${icon('image')}Choose photo<input type="file" name="photo" accept="image/*" required></label>
+          </div>
+          <output class="small muted photo-selection" aria-live="polite"></output>
+          <div class="actions">${submitButton('Save photo', 'check')}</div>
+        </form>
+      </section>
+      <section class="panel panel-content profile-section"><h2>Change password</h2>
+        <form id="profile-password" class="sheet">
+          ${password('current_password', 'Current password', 'current-password')}
+          ${password('new_password', 'New password', 'new-password')}
+          ${password('confirm_password', 'Confirm new password', 'new-password')}
+          <small class="muted">Use at least 12 characters.</small>
+          <div class="actions">${submitButton('Change password', 'lock')}</div>
+        </form>
+      </section>
+    </div>`);
+  window.scrollTo(0, 0);
+  app.querySelector('h1').focus({ preventScroll: true });
 }
 
 const groups = ['Total', 'In review', 'Approved', 'Returned / disapproved'];
 const statusOptions = { '': 'All statuses', active: 'In review', ...statuses };
+const densityButton = () => button('density', 'Compact', 'secondary density', 'compact', `aria-pressed="${compact}"`);
+function pagination() {
+  return `<nav class="pagination" aria-label="Request pagination" hidden>
+    <label class="page-size"><span>Rows<span class="page-label-extra"> per page</span></span> <select id="rows-per-page">${pageSizes.map(size =>
+      `<option value="${size}" ${rowsPerPage === size ? 'selected' : ''}>${size}</option>`).join('')}</select></label>
+    <div class="page-navigation"><span id="row-range" role="status"></span>
+      ${button('previous', '', 'secondary page-step', 'previous', 'aria-label="Previous page" title="Previous page" disabled')}
+      ${button('next', '', 'secondary page-step', 'next', 'aria-label="Next page" title="Next page" disabled')}
+    </div>
+  </nav>`;
+}
+
 function listView() {
   const inbox = screen === 'inbox';
   renderFrame(`<div class="heading register-heading">
@@ -103,19 +249,23 @@ function listView() {
       <h2>Set up your staff profile</h2><p>${inbox
         ? 'Add your staff profile and have requests assigned to you as an approver.'
         : 'Add your branch and two approvers to submit a request from this account.'}</p>
-      ${button('manage-user', 'Set up my profile', 'primary', '', `data-id="${escape(person.id)}"`)}
+      ${button('manage-user', 'Set up my profile', 'primary', 'edit', `data-id="${escape(person.id)}"`)}
     </section>` : `
     ${inbox ? '' : `<dl class="stats" aria-label="Request summary">${groups.map((label, i) =>
       `<div class="stat"><dt>${label}</dt><dd id="count-${i}">–</dd></div>`).join('')}</dl>`}
-    <section class="panel register" aria-label="${inbox ? 'Assigned requests' : 'Request history'}">
+    <section class="panel register ${inbox ? 'register-inbox' : ''}" aria-label="${inbox ? 'Assigned requests' : 'Request history'}">
       <header class="panel-header">
       <div class="filters"><label class="search">${icon('search')}<input id="search" type="search" maxlength="80" aria-label="Search requests" placeholder="Search requests" value="${escape(search)}"></label>
-      ${inbox ? `<select id="filter" aria-label="Approval inbox view">
+      ${inbox ? `<select id="filter" data-native-select aria-label="Approval inbox view">
         <option value="">Awaiting my decision</option><option value="assigned" ${filter === 'assigned' ? 'selected' : ''}>All assigned requests</option>
-      </select>` : `<select id="filter" aria-label="Filter by status">${Object.entries(statusOptions).map(([v, l]) =>
+      </select><select id="inbox-status" data-native-select aria-label="Approval inbox status">
+        <option value="">All statuses</option>${Object.entries(statuses).map(([value, label]) =>
+          `<option value="${value}" ${value === inboxStatus ? 'selected' : ''}>${label}</option>`).join('')}
+      </select>` : `<select id="filter" data-native-select aria-label="Filter by status">${Object.entries(statusOptions).map(([v, l]) =>
         `<option value="${v}" ${v === filter ? 'selected' : ''}>${l}</option>`).join('')}</select>`}
-      </div></header>
-      <div id="request-list" aria-live="polite"><p class="empty">Loading requests…</p></div>
+      </div>${densityButton()}</header>
+      <div id="request-list"><p class="empty" role="status">Loading requests…</p></div>
+      ${pagination()}
     </section>`}`);
 }
 
@@ -126,37 +276,51 @@ function renderList() {
     const el = document.getElementById(`count-${i}`);
     if (el) el.textContent = count ?? '–';
   });
+  const footer = app.querySelector('.pagination');
+  footer.hidden = false;
+  const start = page * rowsPerPage;
+  footer.querySelector('#row-range').textContent = result.rows.length
+    ? `${start + 1}–${start + result.rows.length} of ${result.total}` : '0 requests';
+  footer.querySelector('[data-action="previous"]').disabled = page === 0;
+  footer.querySelector('[data-action="next"]').disabled = start + result.rows.length >= result.total;
   if (!result.rows.length) {
-    target.innerHTML = `<p class="empty">${search || (filter && filter !== 'assigned') ? 'No requests match these filters.' :
+    target.innerHTML = `<p class="empty">${search || inboxStatus || (filter && filter !== 'assigned') ? 'No requests match these filters.' :
       screen === 'inbox' ? (filter === 'assigned' ? 'No requests are assigned to you.' : 'No requests are waiting for your decision.') : 'You haven’t submitted a request yet.'}</p>`;
     return;
   }
-  target.innerHTML = `<div class="list-head" aria-hidden="true"><span>PRF number</span><span>Position</span><span>Date needed</span><span>Status</span></div>
-    <ul class="requests">${result.rows.map(r => `<li><button type="button" class="request-row" data-action="record" data-id="${escape(r.id)}">
-      <span class="record-number">${escape(r.number)}</span>
-      <span class="request-identity"><strong>${escape(r.form.position)}</strong><span class="muted small">${escape(screen === 'inbox' ? r.requester_name : r.form.area)}</span></span>
-      <span class="due"><span class="due-label">Needed </span>${escape(day(r.form.needed))}</span>${badge(r.status)}
-    </button></li>`).join('')}</ul>
-    ${result.total > pageSize ? `<div class="pagination"><span class="muted small">Showing ${page * pageSize + 1}–${page * pageSize + result.rows.length} of ${result.total}</span>
-      <div class="actions">${button('previous', 'Previous', 'secondary', '', page === 0 ? 'disabled' : '')}
-      ${button('next', 'Next', 'secondary', '', (page + 1) * pageSize >= result.total ? 'disabled' : '')}</div></div>` : ''}`;
+  target.innerHTML = `<table class="data-table request-table" role="table" aria-label="${screen === 'inbox' ? 'Approval inbox' : 'My requests'}">
+    <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">PRF number</th>
+      <th scope="col" role="columnheader">Position / ${screen === 'inbox' ? 'requester' : 'assigned area'}</th>
+      <th scope="col" role="columnheader">Date needed</th><th scope="col" role="columnheader">Status</th>
+      <th scope="col" role="columnheader" class="data-action">Action</th></tr></thead>
+    <tbody role="rowgroup">${result.rows.map(r => `<tr class="request-row" role="row">
+      <td class="record-number" role="cell">${escape(r.number)}</td>
+      <td class="request-identity" role="cell"><strong>${escape(r.form.position)}</strong><small>${escape(screen === 'inbox' ? r.requester_name : r.form.area)}</small></td>
+      <td class="due" role="cell"><span class="due-label">Needed </span>${escape(day(r.form.needed))}</td>
+      <td class="request-status" role="cell">${badge(r.status)}</td>
+      <td class="data-action" role="cell">${button('record', 'Open', 'secondary row-button', 'open',
+        `data-id="${escape(r.id)}" aria-label="Open ${escape(r.number)}, ${escape(r.form.position)}"`)}</td>
+    </tr>`).join('')}</tbody></table>`;
 }
 
 async function refreshList() {
   const revision = ++listRevision;
   try {
-    const next = await dashboard({ mode: screen, id: person.id, status: filter, search, page });
+    const next = await dashboard({ mode: screen, id: person.id, status: filter, inboxStatus, search, page, rowsPerPage });
     if (revision !== listRevision || !['inbox', 'requests'].includes(screen)) return;
     if (!next.rows.length && page > 0 && next.total > 0) {
-      page = Math.floor((next.total - 1) / pageSize);
+      page = Math.floor((next.total - 1) / rowsPerPage);
       return refreshList();
     }
+    if (!next.total) page = 0;
     result = next;
     renderList();
   } catch (err) {
     if (revision !== listRevision || !['inbox', 'requests'].includes(screen)) return;
     const target = document.querySelector('#request-list');
-    if (target) target.innerHTML = `<div class="empty">Unable to load requests. ${button('retry-list', 'Try again')}</div>`;
+    if (target) target.innerHTML = `<div class="empty">Unable to load requests. ${button('retry-list', 'Try again', 'secondary', 'retry')}</div>`;
+    const footer = app.querySelector('.pagination');
+    if (footer) footer.hidden = true;
     banner(err.message, true);
   }
 }
@@ -170,6 +334,7 @@ async function goList(mode = 'requests', restore = false) {
   requestListReturn = null;
   page = previous?.page ?? 0;
   filter = previous?.filter ?? '';
+  inboxStatus = previous?.inboxStatus ?? '';
   search = previous?.search ?? '';
   detail = null;
   listView();
@@ -206,14 +371,15 @@ function renderUserRows(term = '') {
   document.getElementById('user-results').innerHTML = matches.length ? matches.map(account => {
     const label = account.name || (account.superAdmin ? 'Super administrator' : account.email);
     const status = account.active === null ? 'Profile pending' : account.active ? 'Active' : 'Inactive';
-    return `<li class="user-row" role="row">
-      <span class="user-identity" role="cell"><span class="avatar user-avatar" aria-hidden="true">${escape(initials(label))}</span>
-        <span><strong>${escape(label)}</strong><small>${label === account.email ? '' : escape(account.email)}</small></span></span>
-      <span class="user-role" role="cell">${account.superAdmin ? 'Super admin' : escape(roleLabels[account.role] ?? 'Unassigned')}</span>
-      <span class="user-branch" role="cell">${escape(account.branch || 'No branch')}</span>
-      <span role="cell"><span class="badge ${account.active ? 'approved' : account.active === false ? 'disapproved' : ''}">${status}</span></span>
-      <span class="user-action" role="cell">${button('manage-user', 'Manage', 'secondary', '', `data-id="${escape(account.id)}" aria-label="Manage ${escape(label)}"`)}</span></li>`;
-  }).join('') : '<li class="empty" role="row"><span role="cell">No accounts match your search.</span></li>';
+    return `<tr class="user-row" role="row">
+      <td role="cell"><span class="user-identity"><span class="avatar user-avatar" aria-hidden="true">${escape(initials(label))}</span>
+        <span><strong>${escape(label)}</strong><small>${label === account.email ? '' : escape(account.email)}</small></span></span></td>
+      <td class="user-role" role="cell">${account.superAdmin ? 'Super admin' : escape(roleLabels[account.role] ?? 'Unassigned')}</td>
+      <td class="user-branch" role="cell">${escape(account.branch || 'No branch')}</td>
+      <td class="user-status" role="cell"><span class="badge ${account.active ? 'approved' : account.active === false ? 'disapproved' : ''}">${status}</span></td>
+      <td class="data-action" role="cell">${button('manage-user', 'Manage', 'secondary row-button', 'edit',
+        `data-id="${escape(account.id)}" aria-label="Manage ${escape(label)}"`)}</td></tr>`;
+  }).join('') : '<tr class="empty-row" role="row"><td class="empty" role="cell" colspan="5">No accounts match your search.</td></tr>';
 }
 
 function renderAccountForm(account, approvers, branches, branchField) {
@@ -231,7 +397,7 @@ function renderAccountForm(account, approvers, branches, branchField) {
   };
   const password = label => field('account-password', label,
     '<input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="72" required><small>Use at least 12 characters. Share the password privately.</small>', 'wide');
-  return `${button('admin', 'Back to users', 'ghost back')}
+  return `${backButton('admin', 'Back to users')}
     <div class="heading"><div><h1 tabindex="-1">${creating ? 'New user' : 'Manage account'}</h1>
       <p>${creating ? 'Create an account and its PRF profile.' : escape(account.email)}</p></div></div>
     <div class="admin-panels">
@@ -253,20 +419,20 @@ function renderAccountForm(account, approvers, branches, branchField) {
           ${approver('supervisor_id', 'Assigned supervisor', 'supervisor')}
           ${approver('hrd_id', 'Assigned HRD approver', 'hrd')}
           ${creating ? password('Initial password') : ''}
-        </div><div class="actions"><button class="button primary" data-mutation>${creating ? 'Create account' : 'Save changes'}</button></div>
+        </div><div class="actions">${creating ? submitButton('Create account', 'plus') : submitButton('Save changes', 'check')}</div>
       </form></section>
-      ${creating || account.superAdmin ? '' : `<section class="panel panel-content admin-editor"><h2>Password reset</h2><form id="admin-form-reset" class="sheet"><input type="hidden" name="action" value="reset"><input type="hidden" name="account_id" value="${escape(account.id)}">${password('New password')}<div class="actions"><button class="button secondary" data-mutation>Reset password</button></div></form></section>`}
+      ${creating || account.superAdmin ? '' : `<section class="panel panel-content admin-editor"><h2>Password reset</h2><form id="admin-form-reset" class="sheet"><input type="hidden" name="action" value="reset"><input type="hidden" name="account_id" value="${escape(account.id)}">${password('New password')}<div class="actions">${submitButton('Reset password', 'lock', 'secondary')}</div></form></section>`}
     </div>`;
 }
 
 function renderBranchForm() {
-  return `${button('admin', 'Back to users', 'ghost back')}
+  return `${backButton('admin', 'Back to users')}
     <div class="heading"><h1 tabindex="-1">Add branch</h1></div>
     <section class="panel panel-content admin-editor branch-editor">
       <form id="admin-form-branch" class="sheet">
         <input type="hidden" name="action" value="create-branch">
         ${field('branch-name', 'Branch name', '<input name="branch_name" maxlength="100" required>')}
-        <div class="actions"><button class="button primary" data-mutation>Add branch</button></div>
+        <div class="actions">${submitButton('Add branch', 'plus')}</div>
       </form>
     </section>`;
 }
@@ -299,17 +465,20 @@ async function openAdmin(view = '', message = '') {
       renderFrame(renderAccountForm(account, approvers, branches, hasBranchDirectory ? 'branch_id' : 'branch'));
     } else {
       renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
-        <div class="actions">${hasBranchDirectory ? button('new-branch', 'Add branch') : ''}
-          ${person.adminOnly ? button('request-options', 'Request options') : ''}
+        <div class="actions">${hasBranchDirectory ? button('new-branch', 'Add branch', 'secondary', 'plus') : ''}
+          ${person.adminOnly ? button('request-options', 'Request options', 'secondary', 'list') : ''}
           ${button('new-user', 'New user', 'primary', 'plus')}</div></div>
         <section class="panel users-panel" aria-label="User accounts">
-          <header class="panel-header"><h2 id="user-count">Accounts</h2>
+          <header class="panel-header"><h2 id="user-count" aria-live="polite">Accounts</h2>
             <label class="search user-search">${icon('search')}
-              <input id="user-search" type="search" value="${escape(adminSearch)}" aria-label="Search users" placeholder="Search name, email, or branch"></label></header>
-          <div role="table" aria-label="Accounts">
-            <div class="user-row user-columns" role="row"><span role="columnheader">Account</span><span role="columnheader">Role</span><span role="columnheader">Branch</span><span role="columnheader">PRF access</span><span role="columnheader">Action</span></div>
-            <ul class="user-list" id="user-results" role="rowgroup" aria-live="polite"></ul>
-          </div>
+              <input id="user-search" type="search" value="${escape(adminSearch)}" aria-label="Search users" placeholder="Search name, email, or branch"></label>
+            ${densityButton()}</header>
+          <table class="data-table user-table" role="table" aria-label="Accounts">
+            <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Account</th><th scope="col" role="columnheader">Role</th>
+              <th scope="col" role="columnheader">Branch</th><th scope="col" role="columnheader">PRF access</th>
+              <th scope="col" role="columnheader" class="data-action">Action</th></tr></thead>
+            <tbody id="user-results" role="rowgroup"></tbody>
+          </table>
         </section>`);
       renderUserRows(adminSearch);
     }
@@ -323,7 +492,7 @@ async function openAdmin(view = '', message = '') {
     } else app.querySelector('h1')?.focus({ preventScroll: true });
   } catch (err) {
     if (revision === routeRevision) {
-      renderFrame('<div class="heading"><h1>Users</h1></div>' + button('admin', 'Try again'));
+      renderFrame('<div class="heading"><h1>Users</h1></div>' + button('admin', 'Try again', 'secondary', 'retry'));
       banner(err.message, true);
     }
   }
@@ -338,12 +507,12 @@ function requestOptionField(kind, label, addLabel, names, selected) {
         ${choices.map(name => `<option value="${escape(name)}" ${name === selected ? 'selected' : ''}>${escape(name)}</option>`).join('')}
       </select>
     </label>
-    <details><summary>${addLabel}</summary>
+    <details><summary class="button secondary option-toggle">${icon('plus')}${addLabel}</summary>
       <div class="option-editor">
         <label class="field" for="${id}-name">New ${label.toLowerCase()}
           <input id="${id}-name" type="text" maxlength="100" autocomplete="off">
         </label>
-        ${button('add-request-option', 'Add option', 'secondary', '', 'data-mutation')}
+        ${button('add-request-option', 'Add option', 'secondary', 'check', 'data-mutation')}
       </div>
       <p role="status" class="small option-error"></p>
     </details>
@@ -352,9 +521,9 @@ function requestOptionField(kind, label, addLabel, names, selected) {
 
 async function saveRequestOption(target) {
   const field = target.closest('[data-option]');
-  const input = field.querySelector('input');
+  const input = field.querySelector('.option-editor input');
   const name = input.value.trim();
-  const status = field.querySelector('[role="status"]');
+  const status = field.querySelector('.option-error');
   status.textContent = '';
   if (!name) {
     status.textContent = 'Enter a name.';
@@ -374,7 +543,8 @@ async function saveRequestOption(target) {
     select.value = savedName;
     input.value = '';
     field.querySelector('details').open = false;
-    select.focus();
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    focusSelect(select);
   } catch (err) {
     status.textContent = err.message;
     input.focus();
@@ -402,7 +572,7 @@ function formView(options) {
   const textarea = (name, label, max, rows = 2) =>
     field(name, label, `<textarea name="${name}" maxlength="${max}" rows="${rows}">${val(name)}</textarea>`, 'wide');
 
-  renderFrame(`${button('back', 'Back to requests', 'ghost back')}
+  renderFrame(`${backButton('back', 'Back to requests')}
     <div class="heading"><div><h1 tabindex="-1">${edit ? 'Revise request' : 'New request'}</h1>
       <p>${escape(person.name)}</p></div></div>
     <form id="request-form" class="sheet">
@@ -424,8 +594,8 @@ function formView(options) {
         ${input('salary', 'Proposed monthly / daily salary (optional)', 'text', 'maxlength="36" placeholder="e.g., ₱18,000 / month"')}
         ${input('allowance', 'Allowance (optional)', 'text', 'maxlength="40"')}
       </div></section>
-      <div class="actions"><button class="button primary" data-mutation>${edit ? 'Resubmit to supervisor' : 'Submit to supervisor'}</button>
-      ${button('back', 'Cancel')}</div>
+      <div class="actions">${submitButton(edit ? 'Resubmit to supervisor' : 'Submit to supervisor', 'send')}
+      ${button('back', 'Cancel', 'secondary', 'close')}</div>
     </form>`);
   conditionalFields();
   window.scrollTo(0, 0);
@@ -458,13 +628,13 @@ function detailView() {
   const next = nextActor(r);
   const decision = canDecide(r, person.id);
   const mayEdit = r.requester_id === person.id && r.status === 'returned';
-  renderFrame(`${button('back', screenOrigin === 'inbox' ? 'Back to approval inbox' : 'Back to requests', 'ghost back')}
+  renderFrame(`${backButton('back', screenOrigin === 'inbox' ? 'Back to approval inbox' : 'Back to requests')}
     <div class="heading"><div><p>${escape(r.number)}</p><h1 tabindex="-1">${escape(f.position)}</h1>
       <div class="status-line">${badge(r.status)}${next ? `<span class="muted">Next action by ${escape(next)}</span>` : ''}</div></div>
       <div class="actions"><div class="print-choice"><select id="paper" aria-label="Paper size">
         <option ${paper === 'A4' ? 'selected' : ''}>A4</option><option ${paper === 'Letter' ? 'selected' : ''}>Letter</option>
       </select>${button('print', 'Print PRF', 'secondary', 'print', 'data-mutation')}</div>
-      ${mayEdit ? button('revise', 'Revise request', 'primary') : ''}</div>
+      ${mayEdit ? button('revise', 'Revise request', 'primary', 'edit') : ''}</div>
     </div>
     <div class="detail-layout">
       <section class="panel panel-content"><h2>Request details</h2><dl class="details">
@@ -490,7 +660,7 @@ function detailView() {
         </select></label>
         <label class="field wide">Comments<textarea name="note" maxlength="800" rows="3"></textarea>
           <small>Enter a reason when returning or disapproving the request.</small></label></div>
-        <div class="actions"><button class="button primary" data-mutation>Record decision</button></div>
+        <div class="actions">${submitButton('Record decision', 'check')}</div>
       </form></section>` : ''}`);
 }
 
@@ -513,7 +683,7 @@ async function openRecord(id, origin = screenOrigin, message = '') {
     banner(message);
   } catch (err) {
     if (token !== routeRevision) return;
-    renderFrame(`${button('back', 'Back to requests', 'ghost back')}<h1>Request unavailable</h1>`);
+    renderFrame(`${backButton('back', origin === 'inbox' ? 'Back to approval inbox' : 'Back to requests')}<h1>Request unavailable</h1>`);
     banner(err.message, true);
   }
 }
@@ -523,12 +693,12 @@ async function startRequest(row = null) {
   screen = 'new';
   edit = row;
   pendingId = row?.id ?? crypto.randomUUID();
-  await loadRequestOptions(button('back', 'Back to requests', 'ghost back'), 'retry-request', formView);
+  await loadRequestOptions(backButton('back', 'Back to requests'), 'retry-request', formView);
 }
 
 async function openRequestOptions() {
   screen = 'admin';
-  const back = button('admin', 'Back to users', 'ghost back');
+  const back = backButton('admin', 'Back to users');
   await loadRequestOptions(back, 'request-options', options => {
     renderFrame(`${back}<div class="heading"><h1 tabindex="-1">Request options</h1></div>
       <section class="panel form-section"><div class="field-grid">${requestOptionFields(options)}</div></section>`);
@@ -546,7 +716,7 @@ async function loadRequestOptions(back, retry, render) {
   } catch (err) {
     if (revision !== routeRevision) return;
     renderFrame(`${back}<div class="heading"><h1>Request options unavailable</h1></div>
-      ${button(retry, 'Try again')}`);
+      ${button(retry, 'Try again', 'secondary', 'retry')}`);
     banner(err.message, true);
   }
 }
@@ -562,10 +732,15 @@ async function start() {
   try {
     const profile = await context();
     const user = supabase ? (await supabase.auth.getUser()).data.user : null;
+    accountUser = user;
     const superAdmin = Boolean(user?.email_confirmed_at && user.app_metadata.prf_super_admin === true);
     person = profile ? { ...profile, superAdmin } : superAdmin
-      ? { id: user.id, name: 'PRF super admin', superAdmin, adminOnly: true } : null;
+      ? { id: user.id, name: adminDisplayName(), superAdmin, adminOnly: true } : null;
     if (!person) return renderLogin('', false, true);
+    if (user) void loadOwnPhoto(user.id).then(photo => {
+      if (photo && accountUser?.id === user.id && !avatarUrl) setProfilePhoto(photo);
+    }).catch(() => { /* Initials stay visible if the photo cannot be loaded. */ });
+    void refreshApprovalCount();
     if (person.adminOnly) return openAdmin();
     const id = new URL(location.href).searchParams.get('request');
     if (id && /^[0-9a-f-]{36}$/i.test(id)) await openRecord(id, 'requests');
@@ -581,13 +756,36 @@ app.addEventListener('change', async e => {
   if (target.id === 'demo-role') {
     setDemoRole(target.value);
     person = await context();
+    resetApprovalCount();
+    void refreshApprovalCount();
     await goList(person.approver ? 'inbox' : 'requests');
-  } else if (target.id === 'filter') {
-    filter = target.value;
+  } else if (target.id === 'filter' || target.id === 'inbox-status') {
+    if (target.id === 'filter') {
+      filter = target.value;
+      if (screen === 'inbox' && !filter) {
+        inboxStatus = '';
+        document.getElementById('inbox-status').value = '';
+      }
+    } else {
+      inboxStatus = target.value;
+      if (inboxStatus) {
+        filter = 'assigned';
+        document.getElementById('filter').value = filter;
+      }
+    }
     page = 0;
+    clearTimeout(searchTimer);
+    await refreshList();
+  } else if (target.id === 'rows-per-page' && pageSizes.includes(Number(target.value))) {
+    rowsPerPage = Number(target.value);
+    saveViewPreference('prf-rows-per-page', String(rowsPerPage));
+    page = 0;
+    clearTimeout(searchTimer);
     await refreshList();
   } else if (target.id === 'paper') {
     paper = target.value;
+  } else if (target.form?.id === 'profile-photo') {
+    target.form.querySelector('output').textContent = target.files[0]?.name ?? '';
   } else if (target.name === 'service' || target.name === 'requisition') {
     conditionalFields();
   } else if (target.name === 'decision') {
@@ -600,7 +798,7 @@ app.addEventListener('change', async e => {
   }
 });
 app.addEventListener('input', e => {
-  if (e.target.form?.id.startsWith('admin-form')) adminDirty = true;
+  if (e.target.form?.id.startsWith('admin-form') && !e.target.matches('.search-select input')) adminDirty = true;
   if (e.target.id === 'user-search') {
     adminSearch = e.target.value;
     return renderUserRows(adminSearch);
@@ -617,12 +815,31 @@ app.addEventListener('keydown', e => {
   e.target.closest('.option-editor').querySelector('button').click();
 });
 app.addEventListener('click', async e => {
-  const target = e.target.closest('button[data-action]');
+  const target = e.target.closest('button[data-action]')
+    ?? (window.getSelection()?.isCollapsed ? e.target.closest('.request-row')?.querySelector('[data-action="record"]') : null);
   if (!target || busy) return;
   const { action, id } = target.dataset;
   if (adminDirty && !window.confirm('Discard unsaved account changes?')) return;
   adminDirty = false;
-  if (action === 'add-request-option') {
+  if (action === 'density') {
+    compact = !compact;
+    const density = compact ? 'compact' : 'comfortable';
+    app.querySelector('.page').dataset.density = density;
+    target.setAttribute('aria-pressed', String(compact));
+    saveViewPreference('prf-table-density', density);
+  } else if (action === 'profile' && accountUser && screen !== 'profile') {
+    profileReturn = { mode: screen, id: detail?.row.id, page, filter, inboxStatus, search, scroll: window.scrollY };
+    openProfile();
+  } else if (action === 'close-profile') {
+    const previous = profileReturn;
+    profileReturn = null;
+    if (previous?.mode === 'detail') await openRecord(previous.id);
+    else if (previous?.mode === 'admin' || person.adminOnly) await openAdmin();
+    else {
+      requestListReturn = previous;
+      await goList(previous?.mode === 'inbox' ? 'inbox' : 'requests', true);
+    }
+  } else if (action === 'add-request-option') {
     await saveRequestOption(target);
   } else if (action === 'admin' && person?.superAdmin) {
     await openAdmin();
@@ -648,7 +865,7 @@ app.addEventListener('click', async e => {
     banner();
     await refreshList();
   } else if (action === 'new' && !person?.adminOnly) {
-    requestListReturn = { mode: screen, page, filter, search, scroll: window.scrollY };
+    requestListReturn = { mode: screen, page, filter, inboxStatus, search, scroll: window.scrollY };
     screenOrigin = 'requests';
     await startRequest();
   } else if (action === 'revise') {
@@ -659,11 +876,19 @@ app.addEventListener('click', async e => {
     if (screen === 'new' && edit) await openRecord(edit.id);
     else await goList(screenOrigin, true);
   } else if (action === 'record') {
-    requestListReturn = { mode: screen, id, page, filter, search, scroll: window.scrollY };
+    requestListReturn = { mode: screen, id, page, filter, inboxStatus, search, scroll: window.scrollY };
     await openRecord(id, screen);
   } else if (action === 'previous' || action === 'next') {
+    const footer = target.closest('.pagination');
+    footer.querySelectorAll('.page-step').forEach(step => { step.disabled = true; });
     page = Math.max(0, page + (action === 'next' ? 1 : -1));
+    clearTimeout(searchTimer);
     await refreshList();
+    if (footer.isConnected && !footer.hidden && [document.body, target].includes(document.activeElement)) {
+      const step = target.disabled ? footer.querySelector('.page-step:not(:disabled)') : target;
+      if (step) step.focus({ preventScroll: true });
+      else focusSelect(footer.querySelector('select'));
+    }
   } else if (action === 'signout') {
     const { error } = await supabase.auth.signOut({ scope: 'local' });
     if (error) return banner(error.message, true);
@@ -671,7 +896,11 @@ app.addEventListener('click', async e => {
     ++listRevision;
     clearTimeout(searchTimer);
     requestListReturn = null;
+    resetApprovalCount();
     person = null;
+    accountUser = null;
+    profileReturn = null;
+    setProfilePhoto(null);
     managedAccounts = [];
     adminDirectory = null;
     adminSearch = '';
@@ -684,7 +913,12 @@ app.addEventListener('click', async e => {
     try {
       markBusy(true);
       await preparePrint(detail.row, paper);
-      window.print();
+      printReturn = { button: target, scroll: window.scrollY };
+      app.hidden = true;
+      printPreview.hidden = false;
+      window.scrollTo(0, 0);
+      printPreview.querySelector('[data-action="send-to-printer"]').focus({ preventScroll: true });
+      if (window.matchMedia('(pointer: fine)').matches) window.print();
     } catch (err) {
       banner(`Could not prepare the printout. ${err.message}`, true);
     } finally {
@@ -692,9 +926,23 @@ app.addEventListener('click', async e => {
     }
   }
 });
-window.addEventListener('afterprint', () => {
-  document.body.classList.remove('print-ready');
-  document.querySelector('#print-root').replaceChildren();
+printPreview.querySelector('.print-controls').innerHTML = `<div class="actions">
+  ${backButton('close-print', 'Back to request')}
+  ${button('send-to-printer', 'Print', 'primary', 'print')}
+  </div><p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>`;
+printPreview.addEventListener('click', event => {
+  const action = event.target.closest('button')?.dataset.action;
+  if (action === 'send-to-printer') {
+    window.print();
+  } else if (action === 'close-print') {
+    printPreview.hidden = true;
+    app.hidden = false;
+    document.getElementById('print-root').replaceChildren();
+    document.getElementById('print-paper')?.remove();
+    printReturn.button.focus({ preventScroll: true });
+    window.scrollTo(0, printReturn.scroll);
+    printReturn = null;
+  }
 });
 app.addEventListener('submit', async event => {
   event.preventDefault();
@@ -709,6 +957,29 @@ app.addEventListener('submit', async event => {
       const { error } = await supabase.auth.signInWithPassword({ email, password: values.password });
       if (error) throw error;
       await start();
+    } else if (form.id === 'profile-name' && accountUser) {
+      const name = values.display_name.trim();
+      if (!name || name.length > 100) throw new Error('Enter a display name of 1 to 100 characters.');
+      person.name = await saveOwnName(name, person.adminOnly);
+      if (person.adminOnly) accountUser.user_metadata.prf_display_name = person.name;
+      form.elements.display_name.value = person.name;
+      adminDirectory = null;
+      refreshProfileHeader();
+      banner('Display name saved.');
+    } else if (form.id === 'profile-photo' && accountUser) {
+      setProfilePhoto(await saveOwnPhoto(accountUser.id, values.photo));
+      form.reset();
+      form.querySelector('output').textContent = '';
+      banner('Profile picture saved.');
+    } else if (form.id === 'profile-password' && accountUser) {
+      if (values.new_password !== values.confirm_password) throw new Error('The new passwords do not match.');
+      if (values.new_password === values.current_password) throw new Error('Choose a password different from your current one.');
+      if (values.new_password.length < 12 || new TextEncoder().encode(values.new_password).length > 72) {
+        throw new Error('Use a password of at least 12 characters and no more than 72 bytes.');
+      }
+      accountUser = await updateOwnPassword(accountUser.email, values.current_password, values.new_password);
+      form.reset();
+      banner('Password changed.');
     } else if (['admin-form', 'admin-form-branch', 'admin-form-reset'].includes(form.id) && person?.superAdmin) {
       const account = await adminAccounts(values);
       adminDirty = false;
@@ -716,7 +987,9 @@ app.addEventListener('submit', async event => {
       if (values.action === 'save' && values.account_id === person.id) {
         const profile = await context();
         person = profile ? { ...profile, superAdmin: true }
-          : { id: person.id, name: 'PRF super admin', superAdmin: true, adminOnly: true };
+          : { id: person.id, name: adminDisplayName(), superAdmin: true, adminOnly: true };
+        resetApprovalCount();
+        void refreshApprovalCount();
       }
       if (values.action === 'create-branch') await openAdmin('', `Added branch ${account.branch.name}.`);
       else if (values.action === 'create') await openAdmin('', `Account created for ${account.email}.`);
@@ -727,6 +1000,7 @@ app.addEventListener('submit', async event => {
       await openRecord(row.id, screenOrigin, edit ? 'Request resubmitted to the supervisor.' : 'Request submitted to the supervisor.');
     } else if (form.id === 'decision-form') {
       const row = await decide({ id: detail.row.id, version: detail.row.version, decision: values.decision, note: values.note });
+      void refreshApprovalCount(true);
       await openRecord(row.id, screenOrigin, 'Decision recorded.');
     }
   } catch (err) {
@@ -737,4 +1011,7 @@ app.addEventListener('submit', async event => {
   }
 });
 
+document.addEventListener('visibilitychange', () => { void refreshApprovalCount(); });
+window.addEventListener('focus', () => { void refreshApprovalCount(); });
+setInterval(refreshApprovalCount, 45_000);
 start();

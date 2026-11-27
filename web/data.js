@@ -79,6 +79,56 @@ export async function context() {
   return config.demo ? demoPeople[demoRole] : unwrap(await supabase.rpc('prf_context'));
 }
 
+export async function saveOwnName(name, adminOnly) {
+  if (adminOnly) {
+    const { user } = unwrap(await supabase.auth.updateUser({ data: { prf_display_name: name } }));
+    return user.user_metadata.prf_display_name;
+  }
+  return unwrap(await supabase.rpc('prf_update_own_name', { display_name: name }));
+}
+
+export async function updateOwnPassword(email, currentPassword, password) {
+  unwrap(await supabase.auth.signInWithPassword({ email, password: currentPassword }));
+  const { user } = unwrap(await supabase.auth.updateUser({ password }));
+  return user;
+}
+
+const avatars = 'prf-avatars';
+const avatarPath = id => `${id}/avatar.jpg`;
+
+export async function loadOwnPhoto(id) {
+  const result = await supabase.storage.from(avatars).download(avatarPath(id));
+  return result.error ? null : result.data;
+}
+
+export async function saveOwnPhoto(id, file) {
+  if (!file?.size || file.size > 12 * 1024 * 1024) throw new Error('Choose a photo under 12 MB.');
+  const supported = file.type ? /^image\/(jpeg|png|webp|avif|heic|heif)$/i.test(file.type)
+    : /\.(jpe?g|png|webp|avif|heic|heif)$/i.test(file.name);
+  if (!supported) throw new Error('Choose a JPEG, PNG, WebP, AVIF, or HEIC photo.');
+  const source = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = source;
+    try { await image.decode(); } catch { throw new Error('Choose a photo your browser can open.'); }
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 384;
+    const ctx = canvas.getContext('2d');
+    const size = Math.min(image.naturalWidth, image.naturalHeight);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, 384, 384);
+    ctx.drawImage(image, (image.naturalWidth - size) / 2, (image.naturalHeight - size) / 2, size, size, 0, 0, 384, 384);
+    const photo = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+    if (!photo || photo.type !== 'image/jpeg' || photo.size > 262144) throw new Error('Could not prepare this photo.');
+    unwrap(await supabase.storage.from(avatars).upload(avatarPath(id), photo, {
+      contentType: 'image/jpeg', upsert: true, cacheControl: '0',
+    }));
+    return photo;
+  } finally {
+    URL.revokeObjectURL(source);
+  }
+}
+
 const demoOptionsKey = 'scpa-prf-demo-options-v1';
 const demoOptions = { branch: ['Main Office', 'Metro Manila'], position: seedRows.map(([name]) => name), area: [sampleForm.area] };
 
@@ -115,7 +165,20 @@ export async function adminAccounts(values) {
   return unwrap(result);
 }
 
-export async function dashboard({ mode, id, status, search, page }) {
+function approvalScope(query, id, assigned = false) {
+  return query.or(assigned
+    ? `supervisor_id.eq.${id},hrd_id.eq.${id}`
+    : `and(status.eq.supervisor,supervisor_id.eq.${id}),and(status.eq.hrd,hrd_id.eq.${id})`);
+}
+
+export async function pendingApprovals(id) {
+  if (config.demo) return demoRows.filter(queue).length;
+  const result = await approvalScope(supabase.from('requests').select('id', { count: 'exact', head: true }), id);
+  unwrap(result);
+  return result.count;
+}
+
+export async function dashboard({ mode, id, status, search, page, rowsPerPage = pageSize, inboxStatus = '' }) {
   const filters = ['', 'active', 'approved', 'closed'];
   if (config.demo) {
     const demoId = demoPeople[demoRole].id;
@@ -124,11 +187,11 @@ export async function dashboard({ mode, id, status, search, page }) {
     const matches = (r, s) => !s || s === 'assigned' || r.status === s ||
       (s === 'active' && ['supervisor', 'hrd'].includes(r.status)) ||
       (s === 'closed' && ['returned', 'disapproved'].includes(r.status));
-    const visible = candidates.filter(r => matches(r, status) &&
+    const visible = candidates.filter(r => matches(r, status) && (mode !== 'inbox' || !inboxStatus || r.status === inboxStatus) &&
       [r.number, r.form.position, r.form.area, r.requester_name].join(' ').toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
     return {
-      rows: visible.slice(page * pageSize, (page + 1) * pageSize),
+      rows: visible.slice(page * rowsPerPage, (page + 1) * rowsPerPage),
       total: visible.length, counts: filters.map(s => candidates.filter(r => matches(r, s)).length),
     };
   }
@@ -139,20 +202,19 @@ export async function dashboard({ mode, id, status, search, page }) {
       { count: 'exact', head },
     );
     q = mode === 'inbox'
-      ? q.or(s === 'assigned'
-        ? `supervisor_id.eq.${id},hrd_id.eq.${id}`
-        : `and(status.eq.supervisor,supervisor_id.eq.${id}),and(status.eq.hrd,hrd_id.eq.${id})`)
+      ? approvalScope(q, id, s === 'assigned')
       : q.eq('requester_id', id);
     if (s === 'active') q = q.in('status', ['supervisor', 'hrd']);
     else if (s === 'closed') q = q.in('status', ['returned', 'disapproved']);
     else if (s && s !== 'assigned') q = q.eq('status', s);
+    if (mode === 'inbox' && inboxStatus) q = q.eq('status', inboxStatus);
     if (term) q = q.ilike('search_text', `%${term.replace(/[\\%_]/g, '\\$&')}%`);
     return q;
   }
 
   const [result, ...counts] = await Promise.all([
     query(status, search).order('updated_at', { ascending: false }).order('id')
-      .range(page * pageSize, (page + 1) * pageSize - 1),
+      .range(page * rowsPerPage, (page + 1) * rowsPerPage - 1),
     ...(mode === 'inbox' ? [] : filters.map(s => query(s, '', true))),
   ]);
   return {

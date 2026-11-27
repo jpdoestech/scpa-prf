@@ -9,7 +9,10 @@
 </head>
 <body>
   <main id="app" aria-busy="true"><p class="loading" role="status">Loading personnel requisitions…</p></main>
-  <div id="print-root" aria-hidden="true"></div>
+  <main id="print-preview" aria-label="PRF print preview" hidden>
+    <div class="print-controls"></div>
+    <div id="print-root"></div>
+  </main>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

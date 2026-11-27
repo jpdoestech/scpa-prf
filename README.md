@@ -21,7 +21,7 @@ Open http://127.0.0.1:4173. Set `PUBLIC_DEMO=true` only for sample builds.
 - In **New request**, select the **Branch**, **Position title**, and **Assigned area / store**. Open **Add branch**, **Add position title**, or **Add assigned area** to save a missing option for everyone with active PRF access. The selected branch describes the request. Approval routing follows the requester's staff profile. A super admin awaiting a staff profile can use **Users → Request options**.
 - Returning or disapproving requires a reason. A returned request can be revised under the same PRF number. Resubmission restarts supervisor review and keeps the full decision history. A disapproval closes the request. HRD approval completes the workflow.
 - Decisions are recorded in Philippine time in the interface and spreadsheet. The database stores timezone-aware timestamps. The schedule, assignment, and requisition type follow the PRF. Salary, allowance, and qualifications are optional.
-- Select **A4** or **Letter** before choosing **Print PRF**. Select the same paper size in your browser, use 100% scale, and turn off browser headers and footers if shown. The form has a built-in 14 mm inset. Use the browser's **None** margin setting if it offers one. The page prints the requester's name plus approved reviewers' names and dates. Handwritten signatures can be added on paper if your office requires them. Long fields and qualifications are printed below the form when needed.
+- Select **A4** or **Letter**, then choose **Print PRF** to open the form preview. On Chrome for iPhone, use **Share → Print** while the preview is open. Select the same paper size in your browser, use 100% scale, and turn off browser headers and footers if shown. The form has a built-in 14 mm inset. Use the browser's **None** margin setting if it offers one. The page prints the requester's name plus approved reviewers' names and dates. Handwritten signatures can be added on paper if your office requires them. Long fields and qualifications are printed below the form when needed.
 - The spreadsheet contains a summary row per submission, resubmission, approval, return, and disapproval. Approval comments, replacement details, qualifications, salary, and allowance remain in Supabase.
 
 ## Set up Supabase
@@ -31,6 +31,10 @@ Open http://127.0.0.1:4173. Set `PUBLIC_DEMO=true` only for sample builds.
 3. Adapt `supabase/provision-example.sql` to create branches, enable staff, and configure the routing. Creating a Supabase Auth account and adding an active `staff` row are both required. To remove access, set `staff.active = false`. Existing requests keep their assigned approvers and require a deliberate reassignment if an approver leaves.
 
 Employees follow updates in **My requests**. Supervisors and HRD check **Approval inbox** for requests awaiting a decision. The browser only reads requests and timelines it is allowed to see. PostgreSQL functions validate mutations, enforce stage order, and record a delivery item in the same transaction as the action.
+
+The **Approval inbox** badge counts requests currently awaiting your decision, across all inbox views. Use the separate status filter to find requests assigned to you at either review stage or with an Approved, Returned, or Disapproved outcome. **Compact** controls table and pagination density. The request tables remember your page size and density in the current browser.
+
+Open **My account** from your profile button to update your display name, profile picture, or password. Password changes require your current password. The sign-in email is displayed for reference.
 
 ## Deploy the frontend
 
