@@ -79,6 +79,31 @@ export async function context() {
   return config.demo ? demoPeople[demoRole] : unwrap(await supabase.rpc('prf_context'));
 }
 
+const demoOptionsKey = 'scpa-prf-demo-options-v1';
+const demoOptions = { branch: ['Main Office', 'Metro Manila'], position: seedRows.map(([name]) => name), area: [sampleForm.area] };
+
+export async function requestOptions() {
+  if (!config.demo) return unwrap(await supabase.rpc('prf_request_options'));
+  try { Object.assign(demoOptions, JSON.parse(localStorage.getItem(demoOptionsKey))); } catch {
+    // The demo remains usable without browser storage.
+  }
+  return demoOptions;
+}
+
+export async function addRequestOption(kind, name) {
+  if (!config.demo) return unwrap(await supabase.rpc('prf_add_request_option', {
+    option_kind: kind, option_name: name,
+  }));
+  const names = demoOptions[kind];
+  const existing = names.find(value => value.toLowerCase() === name.toLowerCase());
+  if (existing) return existing;
+  names.push(name);
+  try { localStorage.setItem(demoOptionsKey, JSON.stringify(demoOptions)); } catch {
+    // Keep the option available in memory.
+  }
+  return name;
+}
+
 export async function adminAccounts(values) {
   const result = await supabase.functions.invoke('prf-admin', values
     ? { method: 'POST', body: values }
@@ -172,7 +197,9 @@ export async function submit({ id, form, version }) {
       submitted_at: at, version: 0, events: [] };
     demoRows.unshift(row);
   }
-  Object.assign(row, { form, status: 'supervisor', version: row.version + 1, updated_at: at, supervisor_at: null, hrd_at: null });
+  const { branch, ...details } = form;
+  if (branch) row.branch_name = branch;
+  Object.assign(row, { form: details, status: 'supervisor', version: row.version + 1, updated_at: at, supervisor_at: null, hrd_at: null });
   row.events.push({ action, actor_name: demoPeople[demoRole].name, stage: 'requester', occurred_at: at });
   saveDemo();
   return row;

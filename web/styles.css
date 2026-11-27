@@ -101,6 +101,11 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
 label.field{display:flex;flex-direction:column;gap:.33rem;font-size:.93rem;font-weight:700;min-width:0}
 .field>input,.field>textarea,.field>select{width:100%;font-weight:400;font-size:1rem}
 .field small{color:var(--muted);font-weight:400}
+.request-option{min-width:0}
+.request-option summary{min-height:44px;display:list-item;align-content:center;color:var(--muted);cursor:pointer;font-size:.875rem}
+.option-editor{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:.5rem}
+.option-error{color:#8b3030}
+.option-error:not(:empty){margin-top:.45rem}
 textarea{resize:vertical}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem}
 .back{padding-left:0;margin-bottom:.65rem}

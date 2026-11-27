@@ -1,4 +1,4 @@
-import { config, supabase, context, adminAccounts, dashboard, record, submit, decide, setDemoRole, currentDemoRole, pageSize } from './data.js';
+import { config, supabase, context, adminAccounts, dashboard, record, requestOptions, addRequestOption, submit, decide, setDemoRole, currentDemoRole, pageSize } from './data.js';
 import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, day, dateTime } from './model.js';
 import { preparePrint } from './print.js';
 
@@ -299,7 +299,9 @@ async function openAdmin(view = '', message = '') {
       renderFrame(renderAccountForm(account, approvers, branches, hasBranchDirectory ? 'branch_id' : 'branch'));
     } else {
       renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
-        <div class="actions">${hasBranchDirectory ? button('new-branch', 'Add branch') : ''}${button('new-user', 'New user', 'primary', 'plus')}</div></div>
+        <div class="actions">${hasBranchDirectory ? button('new-branch', 'Add branch') : ''}
+          ${person.adminOnly ? button('request-options', 'Request options') : ''}
+          ${button('new-user', 'New user', 'primary', 'plus')}</div></div>
         <section class="panel users-panel" aria-label="User accounts">
           <header class="panel-header"><h2 id="user-count">Accounts</h2>
             <label class="search user-search">${icon('search')}
@@ -327,7 +329,69 @@ async function openAdmin(view = '', message = '') {
   }
 }
 
-function formView() {
+function requestOptionField(kind, label, addLabel, names, selected) {
+  const choices = [...new Set([...names, ...(selected ? [selected] : [])])].sort((a, b) => a.localeCompare(b));
+  const id = `request-option-${kind}`;
+  return `<div class="request-option" data-option="${kind}">
+    <label class="field" for="${id}">${label}
+      <select name="${kind}" id="${id}" required><option value="">Select an option</option>
+        ${choices.map(name => `<option value="${escape(name)}" ${name === selected ? 'selected' : ''}>${escape(name)}</option>`).join('')}
+      </select>
+    </label>
+    <details><summary>${addLabel}</summary>
+      <div class="option-editor">
+        <label class="field" for="${id}-name">New ${label.toLowerCase()}
+          <input id="${id}-name" type="text" maxlength="100" autocomplete="off">
+        </label>
+        ${button('add-request-option', 'Add option', 'secondary', '', 'data-mutation')}
+      </div>
+      <p role="status" class="small option-error"></p>
+    </details>
+  </div>`;
+}
+
+async function saveRequestOption(target) {
+  const field = target.closest('[data-option]');
+  const input = field.querySelector('input');
+  const name = input.value.trim();
+  const status = field.querySelector('[role="status"]');
+  status.textContent = '';
+  if (!name) {
+    status.textContent = 'Enter a name.';
+    input.focus();
+    return;
+  }
+  markBusy(true);
+  try {
+    const savedName = await addRequestOption(field.dataset.option, name);
+    if (field.dataset.option === 'branch') adminDirectory = null;
+    const select = field.querySelector('select');
+    const options = [...select.options];
+    if (!options.some(option => option.value === savedName)) {
+      const next = options.slice(1).find(option => option.value.localeCompare(savedName) > 0);
+      select.add(new Option(savedName), next ?? null);
+    }
+    select.value = savedName;
+    input.value = '';
+    field.querySelector('details').open = false;
+    select.focus();
+  } catch (err) {
+    status.textContent = err.message;
+    input.focus();
+  } finally {
+    markBusy(false);
+  }
+}
+
+function requestOptionFields(options, values = {}) {
+  return [
+    requestOptionField('branch', 'Branch', 'Add branch', options.branch, values.branch),
+    requestOptionField('position', 'Position title', 'Add position title', options.position, values.position),
+    requestOptionField('area', 'Assigned area / store', 'Add assigned area', options.area, values.area),
+  ].join('');
+}
+
+function formView(options) {
   const values = edit?.form ?? {};
   const val = name => escape(values[name]);
   const input = (name, label, type, options, opts) =>
@@ -339,12 +403,11 @@ function formView() {
     field(name, label, `<textarea name="${name}" maxlength="${max}" rows="${rows}">${val(name)}</textarea>`, 'wide');
 
   renderFrame(`${button('back', 'Back to requests', 'ghost back')}
-    <div class="heading"><div><h1>${edit ? 'Revise request' : 'New request'}</h1>
-      <p>${escape(person.name)} · ${escape(edit?.branch_name ?? person.branch)}</p></div></div>
+    <div class="heading"><div><h1 tabindex="-1">${edit ? 'Revise request' : 'New request'}</h1>
+      <p>${escape(person.name)}</p></div></div>
     <form id="request-form" class="sheet">
       <section class="panel form-section"><h2>Personnel needed</h2><div class="field-grid">
-        ${input('position', 'Position title', 'text', 'maxlength="100" required')}
-        ${input('area', 'Assigned area / store', 'text', 'maxlength="100" required')}
+        ${requestOptionFields(options, { ...values, branch: edit?.branch_name ?? person.branch })}
         ${input('needed', 'Date needed', 'date', 'required')}
         ${input('headcount', 'Number of personnel', 'number', 'inputmode="numeric" min="1" max="9999" step="1" required')}
       </div></section>
@@ -366,6 +429,7 @@ function formView() {
     </form>`);
   conditionalFields();
   window.scrollTo(0, 0);
+  app.querySelector('h1').focus({ preventScroll: true });
 }
 
 function conditionalFields() {
@@ -454,13 +518,37 @@ async function openRecord(id, origin = screenOrigin, message = '') {
   }
 }
 
-function startRequest(row = null) {
-  ++routeRevision;
+async function startRequest(row = null) {
   clearTimeout(searchTimer);
   screen = 'new';
   edit = row;
   pendingId = row?.id ?? crypto.randomUUID();
-  formView();
+  await loadRequestOptions(button('back', 'Back to requests', 'ghost back'), 'retry-request', formView);
+}
+
+async function openRequestOptions() {
+  screen = 'admin';
+  const back = button('admin', 'Back to users', 'ghost back');
+  await loadRequestOptions(back, 'request-options', options => {
+    renderFrame(`${back}<div class="heading"><h1 tabindex="-1">Request options</h1></div>
+      <section class="panel form-section"><div class="field-grid">${requestOptionFields(options)}</div></section>`);
+    app.querySelector('h1').focus({ preventScroll: true });
+  });
+}
+
+async function loadRequestOptions(back, retry, render) {
+  const revision = ++routeRevision;
+  renderFrame(`${back}<p class="empty" role="status">Loading request options…</p>`);
+  window.scrollTo(0, 0);
+  try {
+    const options = await requestOptions();
+    if (revision === routeRevision) render(options);
+  } catch (err) {
+    if (revision !== routeRevision) return;
+    renderFrame(`${back}<div class="heading"><h1>Request options unavailable</h1></div>
+      ${button(retry, 'Try again')}`);
+    banner(err.message, true);
+  }
 }
 
 async function start() {
@@ -523,14 +611,23 @@ app.addEventListener('input', e => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(refreshList, 220);
 });
+app.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.isComposing || !e.target.matches('.option-editor input')) return;
+  e.preventDefault();
+  e.target.closest('.option-editor').querySelector('button').click();
+});
 app.addEventListener('click', async e => {
   const target = e.target.closest('button[data-action]');
   if (!target || busy) return;
   const { action, id } = target.dataset;
   if (adminDirty && !window.confirm('Discard unsaved account changes?')) return;
   adminDirty = false;
-  if (action === 'admin' && person?.superAdmin) {
+  if (action === 'add-request-option') {
+    await saveRequestOption(target);
+  } else if (action === 'admin' && person?.superAdmin) {
     await openAdmin();
+  } else if (action === 'request-options' && person?.adminOnly) {
+    await openRequestOptions();
   } else if (action === 'new-user' && person?.superAdmin) {
     adminListPosition = window.scrollY;
     adminLauncher = 'new-user';
@@ -551,9 +648,11 @@ app.addEventListener('click', async e => {
   } else if (action === 'new' && !person?.adminOnly) {
     requestListReturn = { mode: screen, page, filter, search, scroll: window.scrollY };
     screenOrigin = 'requests';
-    startRequest();
+    await startRequest();
   } else if (action === 'revise') {
-    startRequest(detail.row);
+    await startRequest(detail.row);
+  } else if (action === 'retry-request') {
+    await startRequest(edit);
   } else if (action === 'back') {
     if (screen === 'new' && edit) await openRecord(edit.id);
     else await goList(screenOrigin, true);
