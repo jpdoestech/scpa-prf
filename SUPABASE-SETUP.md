@@ -5,9 +5,10 @@
 ## Accounts and sign-in
 
 1. Keep **Allow new users to sign up** off and **Email** enabled. Use the Vercel URL as the Site URL. [Sign-in providers](https://supabase.com/dashboard/project/crstiwhylwumglbjxwbo/auth/providers) · [URL configuration](https://supabase.com/dashboard/project/crstiwhylwumglbjxwbo/auth/url-configuration)
-2. Sign in as the PRF super administrator and open **User administration**. Create the supervisor and HRD accounts first. For each account, enter the verified email, name, branch, role, and a unique initial password. Give each user their password privately. [Live app](https://scpa-prf.vercel.app/)
+2. Sign in as the PRF super administrator and open **Users → New user**. Create the supervisor and HRD accounts first. For each account, enter the verified email, name, branch, role, and a unique initial password. Give each user their password privately. [Live app](https://scpa-prf.vercel.app/)
 3. Create the employee and select their supervisor and HRD approver. The app creates the Auth account and active PRF profile together. Other staff can have both approvers assigned at creation if they will submit requests.
-4. HRD handles reset requests and verifies the employee's identity. The authorized PRF administrator uses the Auth user's UUID and Supabase's server-side `auth.admin.updateUserById(userId, { password: newPassword })` to set a replacement password in a trusted admin environment, then gives it privately to the employee. [Administrator password reset](https://supabase.com/docs/reference/javascript/auth-admin-updateuserbyid)
+4. In **Users → Manage**, edit a user's PRF role, branch, assigned approvers, or access status. An inactive profile blocks PRF access and preserves the account and request history. An approver with active assignments must be reassigned before deactivation. Use **Manage** on your own row to add a staff profile and use requisition features from the same login.
+5. HRD verifies password reset requests. The super administrator sets the replacement password in **Users → Manage → Password reset** and gives it privately to the user. Super-admin passwords are reset through the Supabase administrator. [Supabase admin password reset](https://supabase.com/docs/reference/javascript/auth-admin-updateuserbyid)
 
 Employees sign in with email and password. **My requests** shows status, the next approver, and dated comments. Supervisors and HRD check **Approval inbox** for work awaiting them. The pilot requires no email service.
 

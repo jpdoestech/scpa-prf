@@ -5,6 +5,7 @@ import { preparePrint } from './print.js';
 const app = document.querySelector('#app');
 const paths = {
   list: '<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6m-6 4h6m-6 4h4"/>',
+  users: '<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2m2-15a3 3 0 0 1 0 6m4 9v-2a6 6 0 0 0-3-5"/>',
   inbox: '<path d="M4 12 7 5h10l3 7v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 12h5l1 3h4l1-3h5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   search: '<circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/>',
@@ -53,8 +54,7 @@ function markBusy(value) {
 
 function renderLogin(message = '', error = false, inactive = false) {
   app.setAttribute('aria-busy', 'false');
-  app.innerHTML = `<div class="login"><article class="panel">
-    ${logo}
+  app.innerHTML = `<div class="login"><div class="login-shell"><div class="login-masthead">${logo}</div><article>
     <h1>${inactive ? 'Employee access required' : 'Sign in'}</h1>
     <p class="muted">${inactive ? 'Ask your PRF administrator to activate your employee profile.' : 'Sign in with the email and password for your PRF account.'}</p>
     <div id="notice" class="notice" role="status" hidden></div>
@@ -65,7 +65,7 @@ function renderLogin(message = '', error = false, inactive = false) {
         <button class="button primary" data-mutation>Sign in</button>
         <p class="muted small">For account access or a password reset, contact your PRF administrator.</p>
       </form>`}
-  </article></div>`;
+  </article></div></div>`;
   banner(message, error);
 }
 
@@ -76,7 +76,7 @@ function renderFrame(content) {
     <nav class="nav" aria-label="Main navigation">${person.adminOnly ? '' : `${nav('requests', 'My requests', 'list')}
       ${person.approver ? nav('inbox', 'Approval inbox', 'inbox') : ''}
       ${nav('new', 'New request', 'plus')}`}
-      ${person.superAdmin ? nav('admin', 'User administration', 'list') : ''}</nav>
+      ${person.superAdmin ? nav('admin', 'Users', 'users') : ''}</nav>
   </aside><div class="page">
     <header class="page-top"><div class="account">
       ${config.demo ? `<span class="demo-tag">Demo</span><select id="demo-role" aria-label="Demo role">
@@ -171,36 +171,108 @@ function goList(mode = 'requests') {
 const field = (name, label, html, opts = '') =>
   `<label class="field ${opts}" id="field-${name}">${label}${html}</label>`;
 
-async function openAdmin() {
+
+let managedAccounts = [];
+let adminListPosition = 0;
+let adminSearch = '';
+let adminLauncher = '';
+let adminDirty = false;
+const roleLabels = { employee: 'Employee', supervisor: 'Supervisor', hrd: 'HRD approver', other: 'Other staff' };
+
+function renderUserRows(term = '') {
+  const matches = managedAccounts.filter(account =>
+    [account.name, account.email, account.branch, roleLabels[account.role], account.superAdmin ? 'Super admin' : '']
+      .filter(Boolean).join(' ').toLowerCase().includes(term.trim().toLowerCase()));
+  document.getElementById('user-count').textContent = `${matches.length} ${matches.length === 1 ? 'account' : 'accounts'}`;
+  document.getElementById('user-results').innerHTML = matches.length ? matches.map(account => {
+    const label = account.name || (account.superAdmin ? 'Super administrator' : account.email);
+    const status = account.active === null ? 'Profile pending' : account.active ? 'Active' : 'Inactive';
+    return `<li class="user-row" role="row">
+      <span class="user-identity" role="cell"><span class="avatar user-avatar" aria-hidden="true">${escape(initials(label))}</span>
+        <span><strong>${escape(label)}</strong><small>${label === account.email ? '' : escape(account.email)}</small></span></span>
+      <span class="user-role" role="cell">${account.superAdmin ? 'Super admin' : escape(roleLabels[account.role] ?? 'Unassigned')}</span>
+      <span class="user-branch" role="cell">${escape(account.branch || '—')}</span>
+      <span role="cell"><span class="badge ${account.active ? 'approved' : account.active === false ? 'disapproved' : ''}">${status}</span></span>
+      <span class="user-action" role="cell">${button('manage-user', 'Manage', 'secondary', '', `data-id="${escape(account.id)}" aria-label="Manage ${escape(label)}"`)}</span></li>`;
+  }).join('') : '<li class="empty" role="row"><span role="cell">No accounts match your search.</span></li>';
+}
+
+function renderAccountForm(account, approvers) {
+  const creating = !account;
+  const current = account ?? {};
+  const selected = (key, value) => current[key] === value ? 'selected' : '';
+  const approver = (name, label, role) => {
+    const options = approvers.filter(p => p.account_role === role && p.id !== current.id);
+    const previous = current[name] && !options.some(p => p.id === current[name])
+      ? `<option value="${escape(current[name])}" selected>Current approver unavailable</option>` : '';
+    return field(name, label, `<select name="${name}" ${current.role === 'employee' && current.active ? 'required' : ''}>
+      <option value="">Choose an approver</option>${previous}
+      ${options.map(p => `<option value="${escape(p.id)}" ${selected(name, p.id)}>${escape(p.name)}</option>`).join('')}
+    </select>`);
+  };
+  const password = label => field('account-password', label,
+    '<input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="72" required><small>Use at least 12 characters. Share the password privately.</small>', 'wide');
+  return `${button('admin', 'Back to users', 'ghost back')}
+    <div class="heading"><div><h1 tabindex="-1">${creating ? 'New user' : 'Manage account'}</h1>
+      <p>${creating ? 'Create an account and its PRF profile.' : escape(account.email)}</p></div></div>
+    <div class="admin-panels">
+      <section class="panel panel-content admin-editor"><h2>${creating ? 'Account details' : 'PRF profile'}</h2>
+      <form id="admin-form" class="sheet">
+        <input type="hidden" name="action" value="${creating ? 'create' : 'save'}">
+        ${creating ? '' : `<input type="hidden" name="account_id" value="${escape(account.id)}">`}
+        <div class="field-grid">
+          ${field('account-name', 'Full name', `<input name="name" value="${escape(current.name)}" maxlength="100" required>`)}
+          ${creating ? field('account-email', 'Email', '<input type="email" name="email" maxlength="254" autocomplete="off" required>') : ''}
+          ${field('account-branch', 'Branch or office', `<input name="branch" value="${escape(current.branch)}" maxlength="100" required>`)}
+          ${field('account-role', 'Role', `<select name="role" required><option value="">Choose a role</option>${Object.entries(roleLabels).map(([id, label]) => `<option value="${id}" ${selected('role', id)}>${label}</option>`).join('')}</select>`)}
+          ${creating ? '' : field('account-active', 'PRF access', `<select name="active"><option value="true"${current.active !== false ? ' selected' : ''}>Active</option><option value="false"${current.active === false ? ' selected' : ''}>Inactive</option></select>`)}
+          ${approver('supervisor_id', 'Assigned supervisor', 'supervisor')}
+          ${approver('hrd_id', 'Assigned HRD approver', 'hrd')}
+          ${creating ? password('Initial password') : ''}
+        </div><div class="actions"><button class="button primary" data-mutation>${creating ? 'Create account' : 'Save changes'}</button></div>
+      </form></section>
+      ${creating || account.superAdmin ? '' : `<section class="panel panel-content admin-editor"><h2>Password reset</h2><form id="admin-form-reset" class="sheet"><input type="hidden" name="action" value="reset"><input type="hidden" name="account_id" value="${escape(account.id)}">${password('New password')}<div class="actions"><button class="button secondary" data-mutation>Reset password</button></div></form></section>`}
+    </div>`;
+}
+
+async function openAdmin(view = '', message = '') {
   const revision = ++routeRevision;
   screen = 'admin';
-  renderFrame('<div class="heading"><h1>User administration</h1></div><p role="status">Loading approvers…</p>');
+  renderFrame('<div class="heading"><h1>Users</h1></div><p class="empty" role="status">Loading accounts…</p>');
   try {
-    const { approvers } = await adminAccounts();
+    const { accounts, approvers } = await adminAccounts();
     if (revision !== routeRevision) return;
-    const approver = (name, label, role) => field(name, label, `<select name="${name}">
-      <option value="">Choose an approver</option>
-      ${approvers.filter(p => p.account_role === role).map(p =>
-        `<option value="${escape(p.id)}">${escape(p.name)}</option>`).join('')}
-    </select>`);
-    renderFrame(`<div class="heading"><div><h1>User administration</h1>
-      <p>Create the supervisor and HRD accounts first, then assign them to employees.</p></div></div>
-      <section class="panel panel-content"><h2>Create account</h2>
-      <form id="admin-form" class="sheet"><div class="field-grid">
-        ${field('account-name', 'Full name', '<input name="name" maxlength="100" required>')}
-        ${field('account-email', 'Email', '<input type="email" name="email" maxlength="254" autocomplete="off" required>')}
-        ${field('account-branch', 'Branch or office', '<input name="branch" maxlength="100" required>')}
-        ${field('account-role', 'Role', `<select name="role" required>
-          <option value="">Choose a role</option><option value="supervisor">Supervisor</option>
-          <option value="hrd">HRD approver</option><option value="employee">Employee</option>
-          <option value="other">Other staff</option></select>`)}
-        ${approver('supervisor_id', 'Assigned supervisor', 'supervisor')}
-        ${approver('hrd_id', 'Assigned HRD approver', 'hrd')}
-        ${field('account-password', 'Initial password', '<input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="72" required><small>Use at least 12 characters. Give this password to the user privately.</small>', 'wide')}
-      </div><div class="actions"><button class="button primary" data-mutation>Create account</button></div></form></section>`);
+    managedAccounts = accounts.sort((a, b) => Number(b.superAdmin) - Number(a.superAdmin)
+      || (a.name || a.email).localeCompare(b.name || b.email));
+    const account = managedAccounts.find(a => a.id === view);
+    if (view === 'new' || account) {
+      renderFrame(renderAccountForm(account, approvers));
+    } else {
+      renderFrame(`<div class="heading admin-heading"><div><h1>Users</h1>
+        <p>Manage accounts, branch assignments, and PRF access.</p></div>
+        ${button('new-user', 'New user', 'primary', 'plus')}</div>
+        <section class="panel users-panel" aria-label="User accounts">
+          <header class="panel-header"><h2 id="user-count">Accounts</h2>
+            <label class="search user-search">${icon('search')}
+              <input id="user-search" type="search" value="${escape(adminSearch)}" aria-label="Search users" placeholder="Search name, email, or branch"></label></header>
+          <div role="table" aria-label="Accounts">
+            <div class="user-row user-columns" role="row"><span role="columnheader">Account</span><span role="columnheader">Role</span><span role="columnheader">Branch</span><span role="columnheader">PRF access</span><span role="columnheader">Action</span></div>
+            <ul class="user-list" id="user-results" role="rowgroup" aria-live="polite"></ul>
+          </div>
+        </section>`);
+      renderUserRows(adminSearch);
+    }
+    banner(message);
+    window.scrollTo(0, view ? 0 : adminListPosition);
+    if (view) app.querySelector('h1')?.focus({ preventScroll: true });
+    else if (adminLauncher) {
+      const launcher = [...app.querySelectorAll('button[data-action]')].find(node =>
+        node.dataset.id === adminLauncher || (adminLauncher === 'new' && node.dataset.action === 'new-user'));
+      launcher?.focus({ preventScroll: true });
+    }
   } catch (err) {
     if (revision === routeRevision) {
-      renderFrame('<div class="heading"><h1>User administration</h1></div>' + button('admin', 'Try again'));
+      renderFrame('<div class="heading"><h1>Users</h1></div>' + button('admin', 'Try again'));
       banner(err.message, true);
     }
   }
@@ -359,6 +431,7 @@ async function start() {
     if (person.adminOnly) return openAdmin();
     const id = new URL(location.href).searchParams.get('request');
     if (id && /^[0-9a-f-]{36}$/i.test(id)) await openRecord(id, 'requests');
+    else if (person.superAdmin) await openAdmin();
     else await goList();
   } catch (err) {
     renderLogin(err.message, true, true);
@@ -381,12 +454,19 @@ app.addEventListener('change', async e => {
     conditionalFields();
   } else if (target.name === 'decision') {
     target.form.elements.note.required = ['return', 'disapprove'].includes(target.value);
-  } else if (target.name === 'role' && target.form?.id === 'admin-form') {
-    target.form.elements.supervisor_id.required = target.value === 'employee';
-    target.form.elements.hrd_id.required = target.value === 'employee';
+  } else if (['role', 'active'].includes(target.name) && target.form?.id === 'admin-form') {
+    const fields = target.form.elements;
+    const required = fields.role.value === 'employee' && fields.active?.value !== 'false';
+    fields.supervisor_id.required = required;
+    fields.hrd_id.required = required;
   }
 });
 app.addEventListener('input', e => {
+  if (e.target.form?.id.startsWith('admin-form')) adminDirty = true;
+  if (e.target.id === 'user-search') {
+    adminSearch = e.target.value;
+    return renderUserRows(adminSearch);
+  }
   if (e.target.id !== 'search') return;
   search = e.target.value.trim();
   page = 0;
@@ -397,8 +477,18 @@ app.addEventListener('click', async e => {
   const target = e.target.closest('button[data-action]');
   if (!target || busy) return;
   const { action, id } = target.dataset;
+  if (adminDirty && !window.confirm('Discard unsaved account changes?')) return;
+  adminDirty = false;
   if (action === 'admin' && person?.superAdmin) {
     await openAdmin();
+  } else if (action === 'new-user' && person?.superAdmin) {
+    adminListPosition = window.scrollY;
+    adminLauncher = 'new';
+    await openAdmin('new');
+  } else if (action === 'manage-user' && person?.superAdmin) {
+    adminListPosition = window.scrollY;
+    adminLauncher = id;
+    await openAdmin(id);
   } else if (action === 'requests' || action === 'inbox') {
     await goList(action);
   } else if (action === 'new') {
@@ -419,6 +509,10 @@ app.addEventListener('click', async e => {
     if (error) return banner(error.message, true);
     ++routeRevision;
     person = null;
+    managedAccounts = [];
+    adminSearch = '';
+    adminListPosition = 0;
+    adminLauncher = '';
     detail = null;
     edit = null;
     renderLogin();
@@ -451,10 +545,17 @@ app.addEventListener('submit', async event => {
       const { error } = await supabase.auth.signInWithPassword({ email, password: values.password });
       if (error) throw error;
       await start();
-    } else if (form.id === 'admin-form' && person?.superAdmin) {
+    } else if (['admin-form', 'admin-form-reset'].includes(form.id) && person?.superAdmin) {
       const account = await adminAccounts(values);
-      await openAdmin();
-      banner(`Account created for ${account.email}.`);
+      adminDirty = false;
+      if (values.action === 'save' && values.account_id === person.id) {
+        const profile = await context();
+        person = profile ? { ...profile, superAdmin: true }
+          : { id: person.id, name: 'PRF super admin', superAdmin: true, adminOnly: true };
+      }
+      if (values.action === 'create') await openAdmin('', `Account created for ${account.email}.`);
+      else if (values.action === 'reset') await openAdmin(values.account_id, 'Password reset.');
+      else await openAdmin(values.account_id, 'PRF profile saved.');
     } else if (form.id === 'request-form') {
       const row = await submit({ id: pendingId, form: values, version: edit?.version });
       await openRecord(row.id, screenOrigin, edit ? 'Request resubmitted to the supervisor.' : 'Request submitted to the supervisor.');
