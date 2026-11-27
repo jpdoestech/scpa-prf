@@ -631,6 +631,7 @@ app.addEventListener('click', async e => {
   } else if (action === 'new-user' && person?.superAdmin) {
     adminListPosition = window.scrollY;
     adminLauncher = 'new-user';
+    adminDirectory = null;
     await openAdmin('new');
   } else if (action === 'new-branch' && person?.superAdmin) {
     adminListPosition = window.scrollY;
@@ -639,6 +640,7 @@ app.addEventListener('click', async e => {
   } else if (action === 'manage-user' && person?.superAdmin) {
     adminListPosition = window.scrollY;
     adminLauncher = id;
+    adminDirectory = null;
     await openAdmin(id);
   } else if (action === 'requests' || action === 'inbox') {
     if (action === 'requests' || person?.approver || person?.superAdmin) await goList(action);
