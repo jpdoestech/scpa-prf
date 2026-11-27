@@ -27,7 +27,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (req.method === 'GET') {
-    const { data: branches, error: branchError } = await db.from('branches').select('id,name').order('name');
+    const { data: branches, error: branchError } = await db.from('branches').select('id,name,active').order('name');
     if (branchError) return reply({ error: 'Could not load branches.' }, 500);
     const branchNames = new Map(branches.map(branch => [branch.id, branch.name]));
     const accounts = [];
@@ -113,11 +113,12 @@ Deno.serve(async (req: Request) => {
     return reply({ error: 'Choose two distinct approvers.' }, 400);
   }
   // Older clients may still send a branch name. Both paths must resolve an existing branch.
-  const { data: branch, error: branchError } = await db.from('branches').select('name')
+  const { data: branch, error: branchError } = await db.from('branches').select('id,active')
     .eq(branchId ? 'id' : 'name', branchId || previousBranch).maybeSingle();
   if (branchError) return reply({ error: 'Could not check the selected branch.' }, 500);
   if (!branch) return reply({ error: 'Choose an existing branch.' }, 400);
-  const profile = { name, branch: branch.name, role, active, supervisor_id, hrd_id };
+  if (action === 'create' && !branch.active) return reply({ error: 'Choose an active branch.' }, 400);
+  const profile = { name, branch_id: branch.id, role, active, supervisor_id, hrd_id };
   if (action === 'save') {
     const { error } = await db.rpc('prf_save_staff', { user_id: id, profile });
     if (error?.code === 'P0001') return reply({ error: error.message }, 409);
