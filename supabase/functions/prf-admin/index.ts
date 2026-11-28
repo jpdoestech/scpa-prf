@@ -39,7 +39,7 @@ Deno.serve(async (req: Request) => {
       const ids = data.users.map(account => account.id);
       if (!ids.length) break;
       const { data: profiles, error: profileError } = await db.from('staff')
-        .select('id,name,account_role,active,branch_id,supervisor_override,hrd_override,can_override_approval').in('id', ids);
+        .select('id,name,account_role,active,branch_id,supervisor_override,hrd_override,supervisor_overrides,hrd_overrides,can_override_approval').in('id', ids);
       if (profileError) return reply({ error: 'Could not load PRF staff profiles.' }, 500);
       const { data: memberships, error: membershipError } = await db.from('staff_branch_memberships')
         .select('staff_id,branch_id').in('staff_id', ids).order('branch_id');
@@ -61,6 +61,8 @@ Deno.serve(async (req: Request) => {
           branch_ids: assigned.get(account.id) ?? [],
           branch: (assigned.get(account.id) ?? []).map(id => branchNames.get(id)).filter(Boolean).join(', '),
           supervisor_id: profile?.supervisor_override ?? '', hrd_id: profile?.hrd_override ?? '',
+          supervisor_ids: profile?.supervisor_overrides.length ? profile.supervisor_overrides : profile?.supervisor_override ? [profile.supervisor_override] : [],
+          hrd_ids: profile?.hrd_overrides.length ? profile.hrd_overrides : profile?.hrd_override ? [profile.hrd_override] : [],
           superAdmin: account.app_metadata.prf_super_admin === true,
         });
       }
@@ -133,7 +135,7 @@ Deno.serve(async (req: Request) => {
       return reply({ error: 'Super-admin accounts are protected.' }, 403);
     }
     const { data: linked, error: checkError } = await db.from('requests').select('id')
-      .or(`requester_id.eq.${id},supervisor_id.eq.${id},hrd_id.eq.${id}`).limit(1);
+      .or(`requester_id.eq.${id},supervisor_ids.cs.{${id}},hrd_ids.cs.{${id}}`).limit(1);
     if (checkError) return reply({ error: 'Could not check the account’s PRF history.' }, 500);
     if (linked.length) return reply({ error: 'This account is linked to PRF history. Account deletion is available once no PRFs reference it.' }, 409);
 
@@ -187,6 +189,12 @@ Deno.serve(async (req: Request) => {
   const active = action === 'create' || values.active === 'true';
   const supervisor_id = text(values.supervisor_id) || null;
   const hrd_id = text(values.hrd_id) || null;
+  const usesRosters = values.supervisor_ids !== undefined || values.hrd_ids !== undefined;
+  const validRoster = (value: unknown) => Array.isArray(value) && value.length <= 100 &&
+    value.every(id => typeof id === 'string' && uuid.test(id));
+  if (usesRosters && (!validRoster(values.supervisor_ids) || !validRoster(values.hrd_ids))) {
+    return reply({ error: 'Choose up to 100 approvers for each stage.' }, 400);
+  }
   if ((action === 'create' && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)) ||
     !name || name.length > 100 || !roles.includes(role)
     || (action === 'save' && !['true', 'false'].includes(values.active))) {
@@ -195,9 +203,9 @@ Deno.serve(async (req: Request) => {
   if (!(branchId || previousBranch) || branchId.length > 100 || previousBranch.length > 100) {
     return reply({ error: 'Choose an existing branch.' }, 400);
   }
-  if (Boolean(supervisor_id) !== Boolean(hrd_id)
+  if (!usesRosters && (Boolean(supervisor_id) !== Boolean(hrd_id)
     || (supervisor_id && hrd_id &&
-      (!uuid.test(supervisor_id) || !uuid.test(hrd_id) || supervisor_id === hrd_id || id === supervisor_id || id === hrd_id))) {
+      (!uuid.test(supervisor_id) || !uuid.test(hrd_id) || supervisor_id === hrd_id || id === supervisor_id || id === hrd_id)))) {
     return reply({ error: 'Choose two distinct approvers.' }, 400);
   }
   // Older clients may still send a branch name. Both paths must resolve an existing branch.
@@ -215,6 +223,7 @@ Deno.serve(async (req: Request) => {
     return reply({ error: 'Choose a valid approval override permission.' }, 400);
   }
   const profile = { name, branch_id: branch.id, ...(branchIds ? { branch_ids: branchIds } : {}), role, active, supervisor_id, hrd_id,
+    ...(usesRosters ? { supervisor_ids: values.supervisor_ids, hrd_ids: values.hrd_ids } : {}),
     ...(values.can_override_approval === undefined ? {} : { can_override_approval: values.can_override_approval }) };
   if (action === 'save') {
     const { error } = await db.rpc('prf_save_staff', { user_id: id, profile });
