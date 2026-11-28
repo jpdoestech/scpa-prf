@@ -810,7 +810,7 @@ function formView(options) {
   renderFrame(`<div class="heading register-heading request-editor-heading"><div><h1 tabindex="-1">${edit ? 'Revise request' : 'New request'}</h1>
       <div class="request-editor-context">${edit ? badge(edit.status) : ''}<p>${escape(person.name)}</p></div></div>${backButton('back', 'Back to requests')}</div>
     <form id="request-form" class="sheet request-editor">
-      <section class="panel request-editor-section" aria-labelledby="personnel-heading">
+      <section class="panel request-panel" aria-labelledby="personnel-heading">
         <h2 id="personnel-heading">${icon('users')}Personnel needed</h2><div class="field-grid">
         ${requestOptionFields(options, { ...values, branch: edit?.branch_name ?? person.branch }, officerField)}
         ${input('headcount', 'Number of personnel', 'text', 'inputmode="numeric" pattern="[1-9][0-9]{0,3}" title="Enter a whole number from 1 to 9,999." required')}
@@ -819,7 +819,7 @@ function formView(options) {
           ${input('needed_to', 'To', 'date', `aria-label="Date needed to" min="${val('needed')}" required`)}
         </div></fieldset>
       </div></section>
-      <section class="panel request-editor-section" aria-labelledby="assignment-heading">
+      <section class="panel request-panel" aria-labelledby="assignment-heading">
         <h2 id="assignment-heading">${icon('clock')}Assignment</h2><div class="assignment-fields">
         ${select('service', 'Service time frame', services)}
         ${shortText('service_other', 'Specify service time frame')}
@@ -828,7 +828,7 @@ function formView(options) {
         ${textarea('assignment_remarks', 'Detailed work assignment', 650, 3)}
         ${input('schedule', 'Work schedule', 'text', 'maxlength="120" placeholder="e.g., Monday to Saturday, 8 AM–5 PM" required', 'wide')}
       </div></section>
-      <section class="panel request-editor-section request-requisition" aria-labelledby="requisition-heading">
+      <section class="panel request-panel request-requisition" aria-labelledby="requisition-heading">
         <h2 id="requisition-heading">${icon('list')}Requisition details</h2><div class="field-grid">
         ${select('requisition', 'Requisition type', requisitions)}
         ${textarea('reason', '<span id="reason-label">Reason / details</span>', 500)}
@@ -892,53 +892,61 @@ function detailView() {
   const decision = canDecide(r, person.id);
   const skipped = person.canOverrideApproval ? skippedApproval(r, person.id) : '';
   const mayEdit = r.requester_id === person.id && r.status === 'returned';
+  const approvalDates = fieldEntry(r.officer_approval_required ? 'Officer/Agent approved' : 'Officer/Agent step auto-approved', approvalTime(r.officer_at)) +
+    fieldEntry('Supervisor approved', approvalTime(r.supervisor_at)) + fieldEntry('HRD approved', approvalTime(r.hrd_at));
   renderFrame(`${backButton('back', screenOrigin === 'inbox' ? 'Back to approval inbox' : 'Back to requests')}
-    <div class="heading"><div><p>${escape(prfNumber(r))}</p><h1 tabindex="-1">${escape(f.position)}</h1>
-      <div class="status-line">${badge(r.status)}${next ? `<span class="muted">Next action by ${escape(next)}</span>` : ''}</div></div>
+    <div class="heading request-detail-heading"><div><p class="record-number">${escape(prfNumber(r))}</p><h1 tabindex="-1">${escape(f.position)}</h1>
+      <div class="status-line">${badge(r.status)}${next ? `<span class="muted small">Next action by ${escape(next)}</span>` : ''}</div></div>
       <div class="actions"><div class="print-choice"><select id="paper" aria-label="Paper size">
         <option ${paper === 'A4' ? 'selected' : ''}>A4</option><option ${paper === 'Letter' ? 'selected' : ''}>Letter</option>
       </select>${button('export', 'Print/Export PRF', 'secondary', 'print', 'data-mutation')}</div>
       ${mayEdit ? button('revise', 'Revise request', 'primary', 'edit') : ''}</div>
     </div>
     <div class="detail-layout">
-      <section class="panel panel-content"><h2>Request details</h2><dl class="details">
+      <section class="panel request-panel" aria-labelledby="request-details-heading"><h2 id="request-details-heading">${icon('list')}Request details</h2>
+        <div class="request-detail-groups">
+        <div><h3>Personnel needed</h3><dl class="details">
         ${fieldEntry('Requested by', r.requester_name)}${fieldEntry('Branch / office', r.branch_name)}
         ${fieldEntry('Assigned area / store', f.area)}${fieldEntry('Headcount', f.headcount)}
         ${fieldEntry('Date requested', approvalTime(r.submitted_at, true))}${fieldEntry('Date needed', neededDateRange(f))}
+        </dl></div><div><h3>Assignment</h3><dl class="details">
         ${fieldEntry('Service time frame', services[f.service])}
         ${fieldEntry('Other service time frame', f.service_other, true)}
         ${fieldEntry('Work assignment', assignments[f.assignment])}
         ${fieldEntry('Brief description', f.assignment_description, true)}
         ${fieldEntry('Detailed work assignment', f.assignment_remarks, true)}
-        ${fieldEntry('Requisition type', requisitions[f.requisition])}${fieldEntry('Work schedule', f.schedule)}
+        ${fieldEntry('Work schedule', f.schedule, true)}
+        </dl></div><div><h3>Requisition details</h3><dl class="details">
+        ${fieldEntry('Requisition type', requisitions[f.requisition], true)}
         ${fieldEntry('Requisition details', f.reason, true)}${fieldEntry('Qualifications', f.qualifications, true)}
         ${fieldEntry('Proposed salary', f.salary)}${fieldEntry('Allowance', f.allowance)}
-        ${fieldEntry(r.officer_approval_required ? 'Officer/Agent approved' : 'Officer/Agent step auto-approved', approvalTime(r.officer_at))}
-        ${fieldEntry('Supervisor approved', approvalTime(r.supervisor_at))}
-        ${fieldEntry('HRD approved', approvalTime(r.hrd_at))}
-      </dl></section>
-      <section class="panel panel-content"><h2>Request timeline</h2>
+        </dl></div>${approvalDates ? `<div><h3>Approval dates</h3><dl class="details">${approvalDates}</dl></div>` : ''}
+      </div></section>
+      <div class="request-review-rail">
+      ${decision || skipped ? `<section class="panel request-panel" aria-labelledby="request-review-heading"><h2 id="request-review-heading">${icon('check')}Review request</h2>
+        <form id="decision-form" class="request-review-form">
+          <label class="field">Decision<select name="decision" required>
+            <option value="">Choose a decision</option>
+            ${decision ? '<option value="approve">Approve</option><option value="return">Return for correction</option><option value="disapprove">Disapprove</option>' : ''}
+            ${skipped ? '<option value="override">Approve with override</option>' : ''}
+          </select></label>
+          <label class="field">Comments<textarea name="note" aria-describedby="decision-help" maxlength="800" rows="2"></textarea></label>
+          <small id="decision-help" class="muted" role="status" ${decision ? '' : 'hidden'}>${decision ? 'Enter a reason when returning or disapproving the request.' : ''}</small>
+          <div class="actions">${submitButton('Record decision', 'check')}</div>
+        </form></section>` : ''}
+      <section class="panel request-panel" aria-labelledby="request-timeline-heading"><h2 id="request-timeline-heading">${icon('clock')}Request timeline</h2>
+      <div>${events.length ? `
       <ol class="timeline">${events.map(e => {
         const changes = correctionHistory(e);
-        return `<li><strong>${escape(eventTitle(e))}</strong>
-          <p class="muted small">${escape(e.actor_name)} · ${escape(dateTime(e.occurred_at))}</p>
-          ${e.note ? `<p>${escape(e.note)}</p>` : ''}
+        return `<li class="timeline-${escape(e.action)}"><strong>${escape(eventTitle(e))}</strong>
+          <p class="timeline-meta">${escape(e.actor_name)} · <time datetime="${escape(e.occurred_at)}">${escape(dateTime(e.occurred_at))}</time></p>
+          ${e.note ? `<p class="timeline-note">${escape(e.note)}</p>` : ''}
           ${changes.length ? `<dl class="timeline-changes">${changes.map(({ label, from, to }) => `<div>
             <dt>${escape(label)}</dt><dd><b>From</b><span>${escape(from)}</span></dd><dd><b>To</b><span>${escape(to)}</span></dd>
           </div>`).join('')}</dl>` : ''}</li>`;
-      }).join('')}</ol></section>
-    </div>
-    ${decision || skipped ? `<section class="panel panel-content decision"><h2>Review request</h2>
-      <form id="decision-form" class="decision">
-        <div class="field-grid"><label class="field">Decision<select name="decision" required>
-          <option value="">Choose a decision</option>
-          ${decision ? '<option value="approve">Approve</option><option value="return">Return for correction</option><option value="disapprove">Disapprove</option>' : ''}
-          ${skipped ? `<option value="override">Approve with override</option>` : ''}
-        </select></label>
-        <label class="field wide">Comments<textarea name="note" maxlength="800" rows="3"></textarea>
-          <small id="decision-help">${decision ? 'Enter a reason when returning or disapproving the request.' : ''}</small></label></div>
-        <div class="actions">${submitButton('Record decision', 'check')}</div>
-      </form></section>` : ''}`);
+      }).join('')}</ol>` : '<p class="muted small">No timeline events yet.</p>'}</div></section>
+      </div>
+    </div>`);
 }
 
 let screenOrigin = 'requests';
@@ -956,6 +964,7 @@ async function openRecord(id, origin = screenOrigin, message = '') {
     if (token !== routeRevision) return;
     detail = next;
     detailView();
+    if (message) window.scrollTo(0, 0);
     app.querySelector('h1')?.focus({ preventScroll: true });
     popupNotice(message);
   } catch (err) {
@@ -1248,10 +1257,14 @@ app.addEventListener('change', async e => {
     target.form.querySelector('.approval-override-control').hidden = !['supervisor', 'hrd'].includes(target.value);
     updateCoordinatorProfile(target.form);
   } else if (target.name === 'decision') {
-    target.form.elements.note.required = Boolean(target.value && target.value !== 'approve');
-    document.getElementById('decision-help').textContent = target.value === 'override'
+    const note = target.form.elements.note;
+    const help = document.getElementById('decision-help');
+    note.required = Boolean(target.value && target.value !== 'approve');
+    help.textContent = target.value === 'override'
       ? `Enter the reason for skipping ${skippedApproval(detail.row, person.id)} approval.`
+      : target.value === 'approve' ? 'Comments are optional for approval.'
       : canDecide(detail.row, person.id) ? 'Enter a reason when returning or disapproving the request.' : '';
+    help.hidden = !help.textContent;
   }
 });
 app.addEventListener('input', e => {
@@ -1302,8 +1315,11 @@ app.addEventListener('click', async e => {
     ?? (window.getSelection()?.isCollapsed ? e.target.closest('.request-row')?.querySelector('[data-action="record"]') : null);
   if (!target || busy) return;
   const { action, id } = target.dataset;
-  if (screen === 'new' && requestDirty && ['back', 'requests', 'inbox', 'admin', 'profile', 'signout'].includes(action)) {
-    const discard = await optionDialog('Discard request changes?', `<p id="option-dialog-description">Your unsaved changes will be lost.</p>
+  const review = screen === 'detail' ? document.getElementById('decision-form') : null;
+  const hasReviewChanges = review && (review.elements.decision.value || review.elements.note.value);
+  if (((screen === 'new' && requestDirty) || hasReviewChanges) && ['back', 'requests', 'inbox', 'admin', 'profile', 'signout', 'revise'].includes(action)) {
+    const title = hasReviewChanges ? 'Discard review changes?' : 'Discard request changes?';
+    const discard = await optionDialog(title, `<p id="option-dialog-description">Your unsaved changes will be lost.</p>
       ${optionDialogFooter('discard', 'Discard changes', 'close', true)}`, target, { alert: true });
     if (!discard) return;
   }
