@@ -8,7 +8,7 @@ const headers = {
 };
 const reply = (body: object, status = 200) => Response.json(body, { headers, status });
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
-const roles = ['employee', 'supervisor', 'hrd', 'other'];
+const roles = ['employee', 'coordinator', 'supervisor', 'hrd', 'other'];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const prfDate = (value: unknown) => typeof value === 'string' && /^(?:20\d{2}|2100)-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
@@ -39,11 +39,20 @@ Deno.serve(async (req: Request) => {
       const ids = data.users.map(account => account.id);
       if (!ids.length) break;
       const { data: profiles, error: profileError } = await db.from('staff')
-        .select('id,name,account_role,active,branch_id,supervisor_override,hrd_override,supervisor_overrides,hrd_overrides,can_override_approval').in('id', ids);
+        .select('id,name,account_role,active,branch_id,supervisor_override,hrd_override,supervisor_overrides,hrd_overrides,can_override_approval,require_officer_approval').in('id', ids);
       if (profileError) return reply({ error: 'Could not load PRF staff profiles.' }, 500);
       const { data: memberships, error: membershipError } = await db.from('staff_branch_memberships')
         .select('staff_id,branch_id').in('staff_id', ids).order('branch_id');
       if (membershipError) return reply({ error: 'Could not load branch assignments.' }, 500);
+      const { data: delegates, error: delegateError } = await db.from('prf_coordinator_officers')
+        .select('coordinator_id,officer_id').in('coordinator_id', ids);
+      if (delegateError) return reply({ error: 'Could not load Officer/Agent assignments.' }, 500);
+      const assignedOfficers = new Map<string, string[]>();
+      for (const { coordinator_id, officer_id } of delegates) {
+        const officers = assignedOfficers.get(coordinator_id) ?? [];
+        officers.push(officer_id);
+        assignedOfficers.set(coordinator_id, officers);
+      }
       const assigned = new Map<string, string[]>();
       for (const item of memberships) {
         const branches = assigned.get(item.staff_id) ?? [];
@@ -57,6 +66,8 @@ Deno.serve(async (req: Request) => {
           id: account.id, email: account.email ?? '', name: profile?.name ?? '',
           role: profile?.account_role ?? '', active: profile?.active ?? null,
           can_override_approval: profile?.can_override_approval ?? false,
+          require_officer_approval: profile?.require_officer_approval ?? true,
+          officer_ids: assignedOfficers.get(account.id) ?? [],
           branch_id: profile?.branch_id ?? '',
           branch_ids: assigned.get(account.id) ?? [],
           branch: (assigned.get(account.id) ?? []).map(id => branchNames.get(id)).filter(Boolean).join(', '),
@@ -135,9 +146,13 @@ Deno.serve(async (req: Request) => {
       return reply({ error: 'Super-admin accounts are protected.' }, 403);
     }
     const { data: linked, error: checkError } = await db.from('requests').select('id')
-      .or(`requester_id.eq.${id},supervisor_ids.cs.{${id}},hrd_ids.cs.{${id}}`).limit(1);
+      .or(`requester_id.eq.${id},officer_id.eq.${id},supervisor_ids.cs.{${id}},hrd_ids.cs.{${id}}`).limit(1);
     if (checkError) return reply({ error: 'Could not check the account’s PRF history.' }, 500);
     if (linked.length) return reply({ error: 'This account is linked to PRF history. Account deletion is available once no PRFs reference it.' }, 409);
+    const { data: delegated, error: delegatesError } = await db.from('prf_coordinator_officers').select('coordinator_id')
+      .eq('officer_id', id).limit(1);
+    if (delegatesError) return reply({ error: 'Could not check Coordinator assignments.' }, 500);
+    if (delegated.length) return reply({ error: 'Remove this Officer/Agent from Coordinator assignments before deleting the account.' }, 409);
 
     const avatars = db.storage.from('prf-avatars');
     const path = `${data.user.id}/avatar.jpg`;
@@ -222,7 +237,23 @@ Deno.serve(async (req: Request) => {
   if (values.can_override_approval !== undefined && typeof values.can_override_approval !== 'boolean') {
     return reply({ error: 'Choose a valid approval override permission.' }, 400);
   }
+  if (role === 'coordinator' && (!validRoster(values.officer_ids) || !values.officer_ids.length ||
+    typeof values.require_officer_approval !== 'boolean')) {
+    return reply({ error: 'Assign at least one Officer/Agent and choose when approval is required.' }, 400);
+  }
+  if (role === 'coordinator' && action === 'create') {
+    const officerIds = [...new Set<string>(values.officer_ids)];
+    const { data: officers, error } = await db.from('staff').select('id').in('id', officerIds)
+      .eq('active', true).eq('account_role', 'employee');
+    const { data: memberships, error: membershipError } = await db.from('staff_branch_memberships')
+      .select('staff_id').in('staff_id', officerIds).in('branch_id', branchIds ?? [branch.id]);
+    if (error || membershipError) return reply({ error: 'Could not check Officer/Agent assignments.' }, 500);
+    if (officers.length !== officerIds.length || new Set(memberships.map(member => member.staff_id)).size !== officerIds.length) {
+      return reply({ error: 'Choose active Officer/Agent accounts with at least one shared branch.' }, 400);
+    }
+  }
   const profile = { name, branch_id: branch.id, ...(branchIds ? { branch_ids: branchIds } : {}), role, active, supervisor_id, hrd_id,
+    ...(role === 'coordinator' ? { officer_ids: values.officer_ids, require_officer_approval: values.require_officer_approval } : {}),
     ...(usesRosters ? { supervisor_ids: values.supervisor_ids, hrd_ids: values.hrd_ids } : {}),
     ...(values.can_override_approval === undefined ? {} : { can_override_approval: values.can_override_approval }) };
   if (action === 'save') {
