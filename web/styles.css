@@ -310,17 +310,43 @@ textarea{resize:vertical}
 .admin-editor .actions{padding-top:.8rem;border-top:1px solid var(--line)}
 .admin-delete{display:grid;justify-items:start;gap:.55rem;margin-top:1.1rem;padding-top:1rem;border-top:1px solid var(--line)}
 .admin-delete h2{margin:0}
-.prf-record-filter{display:flex;align-items:end;gap:.65rem;flex-wrap:wrap}
-.prf-record-filter .field{min-width:10rem}
+.prf-record-heading .back{margin:0;padding-inline:.65rem}
+.prf-record-filter{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:.55rem}
+.prf-record-filter:has(#prf-period-field:not(:empty))>.field{grid-column:1/-1}
+.prf-record-filter :is(input,select){min-width:0}
+.prf-record-filter .button{padding-inline:.6rem}
 #prf-period-field:empty{display:none}
-.prf-record-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.7rem;padding:.9rem;border-bottom:1px solid var(--line)}
-.prf-record-check label{display:inline-grid;place-items:center;width:44px;min-height:44px;cursor:pointer}
+#prf-record-results{margin-top:.75rem}
+.prf-record-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.55rem;padding:.65rem .75rem;border-bottom:1px solid var(--line)}
+.prf-record-toolbar h2{font-size:1rem;letter-spacing:normal}
+.prf-record-toolbar .button{padding-inline:.6rem;gap:.35rem}
+#prf-selection-count{color:var(--deep);font-size:.8rem;font-weight:750;font-variant-numeric:tabular-nums}
+.prf-record-check label{display:inline-grid;place-items:center;width:44px;min-height:44px;cursor:pointer;border-radius:7px;border:1px solid var(--line);background:var(--white)}
+.prf-record-check label:focus-within{outline:2px solid var(--green);outline-offset:2px}
 .prf-record-check input{width:19px;height:19px;min-height:0;margin:0;accent-color:var(--green)}
-.prf-record-date{color:var(--muted);font-variant-numeric:tabular-nums}
+.prf-admin-table tr:has(input:checked){background:#e8f3ed}
+.prf-record-date{color:var(--muted);font-size:.82rem;font-variant-numeric:tabular-nums}
+.prf-record-state .badge{font-size:.78rem;overflow-wrap:normal}
+.prf-delete-description{display:grid;gap:.5rem}
+.prf-delete-summary{display:grid;gap:.12rem;padding:.5rem .65rem;border:1px solid var(--line);border-radius:8px;background:var(--surface-subtle);font-size:.86rem}
+.prf-delete-summary span{color:var(--muted)}
+.option-dialog:has(.prf-delete-description) .option-dialog-footer .button{padding-inline:.5rem;gap:.35rem}
 @media(max-width:899px){
   .prf-admin-table tbody tr{grid-template-columns:auto minmax(0,1fr)}
   .prf-record-check{grid-column:1;grid-row:1/4;align-self:start}
   .prf-record-label,.prf-record-date,.prf-record-state{grid-column:2}
+}
+@media(max-width:500px){
+  .prf-record-toolbar .actions{width:100%;justify-content:flex-end}
+  #prf-selection-count{flex:1 0 5.3rem}
+}
+@media(max-width:420px){
+  #prf-period-field:not(:empty){grid-column:1/-1}
+  .prf-record-filter .button{grid-column:2}
+}
+@media(min-width:550px){
+  .prf-record-filter{display:flex;flex-wrap:wrap}
+  .prf-record-filter>.field,.prf-record-filter>#prf-period-field{flex:1 1 11rem;min-width:0}
 }
 .profile-heading .back{margin:0;padding-inline:.65rem}
 .profile-layout,.profile-identity{display:grid;gap:.75rem;min-width:0;align-items:start}
@@ -396,11 +422,11 @@ textarea{resize:vertical}
 .option-rename-short .option-dialog-footer{padding-block:.28rem}
 .option-sheet-actions{display:grid;gap:.35rem}
 .option-sheet-actions .button{justify-content:flex-start}
-.option-directory-dialog:not(.option-rename-dialog)>form>h2{margin:-1rem -1rem 0;padding:.75rem 1rem;background:var(--surface-subtle);border-bottom:1px solid var(--line)}
-.option-directory-dialog.option-rename-dialog h2{padding:.65rem 1rem;background:var(--surface-subtle);border-bottom:1px solid var(--line)}
-.option-directory-dialog.option-rename-short h2{padding-block:.3rem}
-.option-directory-dialog #option-dialog-description{font-size:.9rem;line-height:1.45}
-.option-directory-dialog .option-dialog-footer{gap:.45rem}
+.option-compact-dialog:not(.option-rename-dialog)>form>h2{margin:-1rem -1rem 0;padding:.75rem 1rem;background:var(--surface-subtle);border-bottom:1px solid var(--line)}
+.option-compact-dialog.option-rename-dialog h2{padding:.65rem 1rem;background:var(--surface-subtle);border-bottom:1px solid var(--line)}
+.option-compact-dialog.option-rename-short h2{padding-block:.3rem}
+.option-compact-dialog #option-dialog-description{font-size:.9rem;line-height:1.45}
+.option-compact-dialog .option-dialog-footer{gap:.45rem}
 .option-confirm-delete{background:#922f30;color:white}
 .option-confirm-delete:hover{background:#762326}
 @media(min-width:900px){
@@ -417,6 +443,8 @@ textarea{resize:vertical}
   .user-table .user-branch{width:23%}
   .request-table th:first-child,.request-table .record-number,.request-table .request-status{width:1%;white-space:nowrap}
   .request-table .request-submitted,.request-table .due{font-size:.82rem}
+  .prf-admin-table th:first-child,.prf-admin-table .prf-record-check,.prf-admin-table .prf-record-state{width:1%;white-space:nowrap}
+  .prf-record-check label{width:36px;min-height:36px}
   .due-label{display:none}
   [data-density=compact] .data-table td,[data-density=compact] .data-table th{padding-block:.36rem}
   [data-density=compact] .user-avatar{width:28px;height:28px}

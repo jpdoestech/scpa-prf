@@ -686,8 +686,9 @@ async function openPrfRecords(period = 'all', value = '', offset = 0, message = 
   const token = ++routeRevision;
   screen = 'admin';
   prfRecordReview = null;
-  renderFrame(`${backButton('admin', 'Back to users')}<div class="heading"><h1 tabindex="-1">Manage PRF records</h1></div>
-    <section class="panel panel-content"><form id="prf-record-filter" class="prf-record-filter">
+  renderFrame(`<div class="heading register-heading prf-record-heading"><h1 tabindex="-1">Manage PRF records</h1>${backButton('admin', 'Back to users')}</div>
+    <section class="panel request-panel" aria-labelledby="prf-filter-heading"><h2 id="prf-filter-heading">${icon('clock')}Submission date</h2>
+    <form id="prf-record-filter" class="prf-record-filter">
       ${field('record-period', 'Filter by submission date', `<select name="period">${Object.entries(prfPeriods).map(([key, label]) =>
         `<option value="${key}"${period === key ? ' selected' : ''}>${label}</option>`).join('')}</select>`)}
       <div id="prf-period-field">${prfPeriodField(period, value)}</div>
@@ -705,18 +706,19 @@ async function openPrfRecords(period = 'all', value = '', offset = 0, message = 
     results.removeAttribute('aria-busy');
     results.innerHTML = `<header class="prf-record-toolbar"><div><h2>${escape(scope)}</h2><p class="muted small">${total} ${total === 1 ? 'PRF' : 'PRFs'}</p></div>
       ${rows.length ? `<div class="actions">
-        ${button('delete-prf-selected', 'Delete selected', 'danger', 'close', 'disabled')}
-        ${period !== 'all' ? button('delete-prf-period', 'Delete all matches', 'danger', 'close') : ''}
+        <span id="prf-selection-count" role="status">0 selected</span>
+        ${button('delete-prf-selected', 'Delete selected', 'danger', 'close', 'aria-haspopup="dialog" disabled')}
+        ${period !== 'all' ? button('delete-prf-period', 'Delete all matches', 'danger', 'close', 'aria-haspopup="dialog"') : ''}
       </div>` : ''}</header>
       ${rows.length ? `<table class="data-table prf-admin-table" role="table" aria-label="PRFs matching the filter"><thead role="rowgroup"><tr role="row">
         <th scope="col" role="columnheader">Select</th><th scope="col" role="columnheader">Request</th><th scope="col" role="columnheader">Date requested</th><th scope="col" role="columnheader">Status</th>
       </tr></thead><tbody role="rowgroup">${rows.map(row => `<tr role="row">
         <td class="prf-record-check" role="cell"><label><input type="checkbox" name="prf-record" value="${escape(row.id)}" aria-label="Select ${escape(row.number ?? row.position)}"></label></td>
         <td class="prf-record-label" role="cell"><strong>${escape(row.position)}</strong><small>${escape(row.number ?? 'Not yet issued')} · ${escape(row.requester_name)}</small></td>
-        <td class="prf-record-date" role="cell">${escape(approvalTime(row.submitted_at, true))}</td><td class="prf-record-state" role="cell">${badge(row.status)}</td>
+        <td class="prf-record-date" role="cell"><span class="due-label" aria-hidden="true">Requested</span> ${escape(approvalTime(row.submitted_at, true))}</td><td class="prf-record-state" role="cell">${badge(row.status)}</td>
       </tr>`).join('')}</tbody></table>
-      <nav class="pagination" aria-label="PRF records pagination"><span>${offset + 1}–${offset + rows.length} of ${total}</span><div class="page-navigation">
-        ${button('prf-record-previous', '', 'secondary page-step', 'back', `aria-label="Previous page" ${offset ? '' : 'disabled'}`)}
+      <nav class="pagination" aria-label="PRF records pagination"><span role="status">${offset + 1}–${offset + rows.length} of ${total}</span><div class="page-navigation">
+        ${button('prf-record-previous', '', 'secondary page-step', 'previous', `aria-label="Previous page" ${offset ? '' : 'disabled'}`)}
         ${button('prf-record-next', '', 'secondary page-step', 'next', `aria-label="Next page" ${offset + rows.length >= total ? 'disabled' : ''}`)}
       </div></nav>` : '<p class="empty">No PRF records match this view.</p>'}`;
     popupNotice(message);
@@ -736,9 +738,10 @@ async function deletePrfRecords(target, byPeriod) {
   const count = byPeriod ? review.total : ids.length;
   if (!count) return;
   const label = `${count} ${count === 1 ? 'PRF' : 'PRFs'}`;
-  const confirmed = await optionDialog(`Permanently delete ${label}?`, `<p id="option-dialog-description">
-    ${byPeriod ? `Delete all matching records for <strong>${escape(review.scope)}</strong>. ` : ''}This removes the PRFs and their approval and correction history from the app.</p>
-    ${optionDialogFooter('delete', `Delete ${label}`, 'close', true)}`, target, { save: () => adminAccounts({
+  const confirmed = await optionDialog(`Permanently delete ${label}?`, `<div id="option-dialog-description" class="prf-delete-description">
+    <div class="prf-delete-summary"><strong>${byPeriod ? 'All matches' : 'Selected records'}</strong><span>${escape(review.scope)}</span></div>
+    <p>This removes ${byPeriod ? 'all matching' : 'the selected'} PRFs and their approval and correction history from the app.</p></div>
+    ${optionDialogFooter('delete', `Delete ${label}`, 'close', true)}`, target, { compact: true, save: () => adminAccounts({
       action: 'delete-prf-records', ...(byPeriod ? review.range : { request_ids: ids }),
       expected_count: count, shown_at: review.shown_at, confirmed: true,
     }) });
@@ -1002,9 +1005,9 @@ const optionActions = {
   delete: { label: 'Delete', icon: 'close', message: 'This permanently removes the option from the directory. Existing requests keep their saved values.' },
 };
 
-function optionDialog(title, content, launcher, { sheet = false, directory = false, save, alert = Boolean(save) } = {}) {
+function optionDialog(title, content, launcher, { sheet = false, compact = false, save, alert = Boolean(save) } = {}) {
   const dialog = document.createElement('dialog');
-  dialog.className = `option-dialog${sheet ? ' option-action-sheet' : ''}${directory ? ' option-directory-dialog' : ''}`;
+  dialog.className = `option-dialog${sheet ? ' option-action-sheet' : ''}${compact ? ' option-compact-dialog' : ''}`;
   dialog.setAttribute('aria-labelledby', 'option-dialog-title');
   dialog.innerHTML = `<form method="dialog"><h2 id="option-dialog-title">${escape(title)}</h2>${content}</form>`;
   const form = dialog.querySelector('form');
@@ -1084,7 +1087,7 @@ function confirmOption(action, name, launcher, save, updatedName) {
   const { label, icon: glyph, message } = optionActions[action];
   const subject = updatedName === undefined ? `“${name}”` : `“${name}” to “${updatedName}”`;
   return optionDialog(`${label} this option?`, `<p id="option-dialog-description">
-    <strong>${escape(subject)}</strong> ${message}</p>${optionDialogFooter(action, label, glyph, action === 'delete')}`, launcher, { save, directory: true });
+    <strong>${escape(subject)}</strong> ${message}</p>${optionDialogFooter(action, label, glyph, action === 'delete')}`, launcher, { save, compact: true });
 }
 
 async function manageOption(target, option) {
@@ -1095,7 +1098,7 @@ async function manageOption(target, option) {
     const selected = await optionDialog(option.name, `<div class="option-sheet-actions">${choices.map(key => {
       const { label, icon: glyph } = optionActions[key];
       return `<button class="button secondary ${key === 'delete' ? 'option-delete' : ''}" type="submit" value="${key}">${icon(glyph)}${label}</button>`;
-    }).join('')}</div><div class="actions option-dialog-footer">${button('dismiss-option-dialog', 'Cancel', 'secondary', 'close', 'autofocus')}</div>`, target, { sheet: true, directory: true });
+    }).join('')}</div><div class="actions option-dialog-footer">${button('dismiss-option-dialog', 'Cancel', 'secondary', 'close', 'autofocus')}</div>`, target, { sheet: true, compact: true });
     if (!selected) return;
     action = selected.action;
   }
@@ -1104,7 +1107,7 @@ async function manageOption(target, option) {
     if (action === 'rename') {
       const input = await optionDialog('Rename option', `<div class="option-rename-fields">${field('rename-option-name', 'New name',
         `<input name="name" value="${escape(newName ?? option.name)}" maxlength="100" required autofocus pattern=".*\\S.*">`)}</div>
-        ${optionDialogFooter('continue', 'Continue', 'next', false, false)}`, target, { directory: true });
+        ${optionDialogFooter('continue', 'Continue', 'next', false, false)}`, target, { compact: true });
       if (!input) return;
       newName = input.value.trim();
     }
@@ -1228,7 +1231,9 @@ app.addEventListener('change', async e => {
   } else if (target.form?.id === 'prf-record-filter' && target.name === 'period') {
     document.getElementById('prf-period-field').innerHTML = prfPeriodField(target.value);
   } else if (target.name === 'prf-record') {
-    app.querySelector('[data-action="delete-prf-selected"]').disabled = !app.querySelector('input[name="prf-record"]:checked');
+    const count = app.querySelectorAll('input[name="prf-record"]:checked').length;
+    document.getElementById('prf-selection-count').textContent = `${count} selected`;
+    app.querySelector('[data-action="delete-prf-selected"]').disabled = count === 0;
   } else if (target.id === 'demo-role') {
     setDemoRole(target.value);
     person = await context();
