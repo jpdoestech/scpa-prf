@@ -216,7 +216,7 @@ export async function dashboard({ mode, id, status, search, page, rowsPerPage = 
 
   function query(s, term = '', head = false) {
     let q = supabase.from('requests').select(
-      head ? 'id' : 'id,number,requester_name,form,status,updated_at',
+      head ? 'id' : 'id,number,requester_name,form,status,submitted_at',
       { count: 'exact', head },
     );
     q = mode === 'inbox'

@@ -307,14 +307,17 @@ function renderList() {
       screen === 'inbox' ? (filter === 'assigned' ? 'No requests are assigned to you.' : 'No requests are waiting for your decision.') : 'You haven’t submitted a request yet.'}</p>`;
     return;
   }
-  target.innerHTML = `<table class="data-table request-table" role="table" aria-label="${screen === 'inbox' ? 'Approval inbox' : 'My requests'}">
+  const showRequested = screen === 'requests';
+  target.innerHTML = `<table class="data-table request-table${showRequested ? ' request-table-with-submitted' : ''}" role="table" aria-label="${screen === 'inbox' ? 'Approval inbox' : 'My requests'}">
     <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">PRF number</th>
       <th scope="col" role="columnheader">Position / ${screen === 'inbox' ? 'requester' : 'assigned area'}</th>
+      ${showRequested ? '<th scope="col" role="columnheader">Date requested</th>' : ''}
       <th scope="col" role="columnheader">Date needed</th><th scope="col" role="columnheader">Status</th>
       <th scope="col" role="columnheader" class="data-action">Action</th></tr></thead>
     <tbody role="rowgroup">${result.rows.map(r => `<tr class="request-row" role="row">
       <td class="record-number" role="cell">${escape(prfNumber(r))}</td>
       <td class="request-identity" role="cell"><strong>${escape(r.form.position)}</strong><small>${escape(screen === 'inbox' ? r.requester_name : r.form.area)}</small></td>
+      ${showRequested ? `<td class="request-submitted" role="cell"><span class="due-label">Requested </span>${escape(approvalTime(r.submitted_at, true))}</td>` : ''}
       <td class="due" role="cell"><span class="due-label">Needed </span>${escape(day(r.form.needed))}</td>
       <td class="request-status" role="cell">${badge(r.status)}</td>
       <td class="data-action" role="cell">${button('record', 'Open', 'secondary row-button', 'open',

@@ -124,8 +124,8 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
 .data-table small{color:var(--muted);font-size:.8rem}
 .request-identity{grid-column:1/-1;grid-row:2}
 .request-status{grid-column:2;grid-row:1;justify-self:end}
-.due,.user-branch{color:var(--muted)}
-.due{font-variant-numeric:tabular-nums}
+.request-submitted,.due,.user-branch{color:var(--muted)}
+.request-submitted,.due{font-variant-numeric:tabular-nums}
 .row-button .icon,.density .icon{width:16px;height:16px}
 [data-density=compact] .data-table tbody tr{padding:.46rem .7rem;row-gap:.15rem}
 [data-density=compact] .data-table .badge{padding:.16rem .42rem}
@@ -154,6 +154,10 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
   [data-density=compact] .request-identity{grid-column:1}
   [data-density=compact] .request-row .due{grid-row:3;grid-column:1}
   [data-density=compact] .request-row .data-action{grid-row:2/4;grid-column:2}
+  .request-table-with-submitted .request-row .request-submitted{grid-row:3;grid-column:1}
+  .request-table-with-submitted .request-row .due{grid-row:4;grid-column:1}
+  .request-table-with-submitted .request-row .data-action{grid-row:3/5;grid-column:2}
+  [data-density=compact] .request-table-with-submitted .request-row .data-action{grid-row:2/5}
   [data-density=compact] .user-row .user-branch,[data-density=compact] .user-row .user-status{grid-column:1}
   [data-density=compact] .user-row .data-action{grid-column:2;grid-row:2/5}
 }
