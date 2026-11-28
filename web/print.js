@@ -286,9 +286,10 @@ function postApprovalSections(otherDetails, assignment, events, wrapped) {
   const family = wrapped ? serif : sans;
   context.font = '10px ' + family;
   const split = Boolean(assignment && !wrapped);
-  const divider = formWidth * .7;
+  const divider = formWidth * .55;
+  const separatorColor = '#b7c0ba';
   const left = { x: 2, end: split ? divider - 8 : formWidth - 2, entries: [], start: 0 };
-  const right = { x: divider + 8, end: formWidth - 2, entries: [], start: 0 };
+  const right = { x: divider + 8, end: formWidth - 2, entries: [], start: 0, ruled: true };
   const columns = split ? [left, right] : [left];
   function heading(label) {
     left.entries.push({ line: label, heading: true });
@@ -338,15 +339,15 @@ function postApprovalSections(otherDetails, assignment, events, wrapped) {
       column.start = end;
       return { ...column, notes: entries.slice(start, end) };
     });
-    sections.push(formSection(context, 'Details after approval', ({ add, text }) => {
+    sections.push(formSection(context, 'Details after approval', ({ add, text, rule }) => {
       const height = 10 + 12 * Math.max(...chunks.map(({ notes }) => notes.length + (split && notes.at(-1)?.stamp ? 1 : 0)));
       if (split && chunks[1].notes.length) {
-        add('line', { x1: divider, x2: divider, y1: 2, y2: height - 5, stroke: '#b7c0ba', 'stroke-width': .7 });
+        add('line', { x1: divider, x2: divider, y1: 2, y2: height - 5, stroke: separatorColor, 'stroke-width': .7 });
       }
-      for (const { x, end, notes } of chunks) {
+      for (const { x, end, notes, ruled } of chunks) {
         const first = notes.findIndex(entry => entry.timeline);
         const last = notes.findLastIndex(entry => entry.timeline);
-        if (first >= 0) add('line', { x1: x + 3, x2: x + 3, y1: 8 + first * 12, y2: 12 + last * 12, stroke: '#b7c0ba', 'stroke-width': .7 });
+        if (first >= 0) add('line', { x1: x + 3, x2: x + 3, y1: 8 + first * 12, y2: 12 + last * 12, stroke: separatorColor, 'stroke-width': .7 });
         for (const [index, entry] of notes.entries()) {
           const y = 12 + index * 12;
           if (entry.stamp) {
@@ -357,6 +358,7 @@ function postApprovalSections(otherDetails, assignment, events, wrapped) {
           if (marker) add('circle', { cx: x + 3, cy: y - 3, r: 2.4, fill: '#235544' });
           text(line, x + (timeline ? 12 : 0), y, timeline && !bold ? 9.5 : 10,
             bold ? 'bold' : 'normal', timeline && !bold ? '#444' : '#111');
+          if (ruled && !bold) rule(x, y + 3, end - x, separatorColor);
           if (entry.metadata) text(entry.metadata, entry.metadataX, y, 9.5, 'normal', '#444');
         }
       }
