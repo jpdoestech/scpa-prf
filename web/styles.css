@@ -248,6 +248,16 @@ textarea{resize:vertical}
 .option-dialog::backdrop{background:#132a2459}
 .option-dialog form{display:grid;gap:.7rem}
 .option-dialog-footer{position:sticky;bottom:0;background:#fff;justify-content:flex-end;padding:.3rem 0}
+.option-rename-dialog{--rename-gutter:1.5rem;max-height:calc(var(--option-height,100dvh) - var(--rename-gutter));padding:0;overflow:hidden}
+.option-rename-dialog form{display:flex;flex-direction:column;gap:0;max-height:calc(var(--option-height,100dvh) - var(--rename-gutter) - 2px)}
+.option-rename-dialog h2{flex:none;padding:1rem 1rem 0}
+.option-rename-fields{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;padding:.7rem 1rem}
+.option-rename-dialog .option-dialog-footer{position:static;flex:none;padding:.65rem 1rem;border-top:1px solid var(--line)}
+.option-rename-short{--rename-gutter:.65rem}
+.option-rename-short h2{padding-top:.45rem;font-size:1rem}
+.option-rename-short .option-rename-fields{padding-block:.25rem}
+.option-rename-short .option-rename-fields .field{gap:.14rem;line-height:1.25}
+.option-rename-short .option-dialog-footer{padding-block:.28rem}
 .option-sheet-actions{display:grid;gap:.35rem}
 .option-sheet-actions .button{justify-content:flex-start}
 .option-dialog-error{color:#902f30}

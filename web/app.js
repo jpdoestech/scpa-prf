@@ -527,7 +527,7 @@ function requestOptionField(kind, label, addLabel, names, selected) {
         ${choices.map(name => `<option value="${escape(name)}" ${name === selectedName ? 'selected' : ''}>${escape(name)}</option>`).join('')}
       </select>
     </label>
-    <details><summary class="button secondary option-toggle">${icon('plus')}${addLabel}</summary>
+    ${addLabel ? `<details><summary class="button secondary option-toggle">${icon('plus')}${addLabel}</summary>
       <div class="option-editor">
         <label class="field" for="${id}-name">New ${label.toLowerCase()}
           <input id="${id}-name" type="text" maxlength="100" autocomplete="off">
@@ -535,7 +535,7 @@ function requestOptionField(kind, label, addLabel, names, selected) {
         ${button('add-request-option', 'Add option', 'secondary', 'check', 'data-mutation')}
       </div>
       <p role="status" class="small option-error"></p>
-    </details>
+    </details>` : ''}
   </div>`;
 }
 
@@ -570,7 +570,7 @@ async function saveRequestOption(target) {
 
 function requestOptionFields(options, values = {}) {
   return [
-    requestOptionField('branch', 'Branch', 'Add branch', options.branch, values.branch),
+    requestOptionField('branch', 'Branch', person.superAdmin ? 'Add branch' : '', options.branch, values.branch),
     requestOptionField('position', 'Position title', 'Add position title', options.position, values.position),
     requestOptionField('area', 'Assigned area / store', 'Add assigned area', options.area, values.area),
   ].join('');
@@ -734,11 +734,23 @@ function optionDialog(title, content, launcher, { sheet = false, save } = {}) {
   const cancel = dialog.querySelector('[data-action="dismiss-option-dialog"]');
   cancel.addEventListener('click', () => dialog.close());
   const viewport = window.visualViewport;
+  const renameFields = form.querySelector('.option-rename-fields');
+  const nameInput = renameFields?.querySelector('input');
+  if (renameFields) dialog.classList.add('option-rename-dialog');
   const fit = () => {
-    if (!viewport) return;
-    dialog.style.setProperty('--option-height', `${viewport.height}px`);
-    dialog.style.setProperty('--option-center', `${viewport.offsetTop + viewport.height / 2}px`);
+    const height = viewport?.height || window.innerHeight;
+    dialog.style.setProperty('--option-height', `${height}px`);
+    dialog.style.setProperty('--option-center', `${(viewport?.offsetTop ?? 0) + height / 2}px`);
+    if (!renameFields) return;
+    dialog.classList.toggle('option-rename-short', height < 320);
+    if (!dialog.open || document.activeElement !== nameInput) return;
+    // Reveal the field inside the dialog without scrolling the page behind it.
+    const field = nameInput.getBoundingClientRect();
+    const visible = renameFields.getBoundingClientRect();
+    if (field.bottom > visible.bottom - 4) renameFields.scrollTop += field.bottom - visible.bottom + 4;
+    else if (field.top < visible.top + 4) renameFields.scrollTop -= visible.top - field.top + 4;
   };
+  dialog.addEventListener('focusin', fit);
   let saving = false;
   let savedValue;
   if (save) {
@@ -766,6 +778,7 @@ function optionDialog(title, content, launcher, { sheet = false, save } = {}) {
     dialog.addEventListener('close', () => {
       viewport?.removeEventListener('resize', fit);
       viewport?.removeEventListener('scroll', fit);
+      window.removeEventListener('resize', fit);
       const action = dialog.returnValue;
       const value = save ? savedValue : form.elements.name?.value;
       dialog.remove();
@@ -776,6 +789,7 @@ function optionDialog(title, content, launcher, { sheet = false, save } = {}) {
     fit();
     viewport?.addEventListener('resize', fit);
     viewport?.addEventListener('scroll', fit);
+    window.addEventListener('resize', fit);
     dialog.showModal();
   });
 }
@@ -809,8 +823,8 @@ async function manageOption(target, option) {
   let newName;
   do {
     if (action === 'rename') {
-      const input = await optionDialog('Rename option', `${field('rename-option-name', 'New name',
-        `<input name="name" value="${escape(newName ?? option.name)}" maxlength="100" required autofocus pattern=".*\\S.*">`)}
+      const input = await optionDialog('Rename option', `<div class="option-rename-fields">${field('rename-option-name', 'New name',
+        `<input name="name" value="${escape(newName ?? option.name)}" maxlength="100" required autofocus pattern=".*\\S.*">`)}</div>
         ${optionDialogFooter('continue', 'Continue', 'next', false, false)}`, target);
       if (!input) return;
       newName = input.value.trim();
@@ -833,7 +847,8 @@ async function openRequestOptions(message = '') {
   const back = backButton('close-options', optionOrigin?.mode === 'admin' ? 'Back to users'
     : optionOrigin?.mode === 'inbox' ? 'Back to approval inbox' : 'Back to requests');
   const heading = `${back}<div class="heading"><h1 tabindex="-1">Request options</h1></div>
-    <div class="actions option-kinds" aria-label="Option categories">${Object.entries(optionKinds).map(([kind, title]) =>
+    <div class="actions option-kinds" aria-label="Option categories">${Object.entries(optionKinds)
+      .filter(([kind]) => kind !== 'branch' || person.superAdmin).map(([kind, title]) =>
       button('option-kind', title, 'secondary density', 'list', `data-id="${kind}" aria-pressed="${kind === optionKind}"`)).join('')}</div>`;
   const scroll = message ? window.scrollY : 0;
   renderFrame(`${heading}<p class="empty" role="status">Loading request options…</p>`);
@@ -1017,10 +1032,10 @@ app.addEventListener('click', async e => {
   } else if (action === 'request-options' && (person?.superAdmin || person?.canManageOptions)) {
     if (screen !== 'options') {
       optionOrigin = { mode: screen, page, filter, inboxStatus, search, scroll: window.scrollY };
-      optionKind = 'branch';
+      optionKind = person.superAdmin ? 'branch' : 'position';
     }
     await openRequestOptions();
-  } else if (action === 'option-kind' && Object.hasOwn(optionKinds, id)) {
+  } else if (action === 'option-kind' && Object.hasOwn(optionKinds, id) && (id !== 'branch' || person.superAdmin)) {
     optionKind = id;
     await openRequestOptions();
   } else if (action === 'close-options') {
