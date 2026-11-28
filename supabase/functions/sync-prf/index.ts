@@ -3,7 +3,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2.89.0';
 type Delivery = {
   event_id: number;
   lease_id: string;
-  snapshot: Record<string, string>;
+  snapshot: Record<'requester' | 'branch' | 'position' | 'headcount' | 'area' | 'needed' | 'requisition' | 'assignment', string>
+    & { number: string | null };
   attempts: number;
   event: Record<string, string>;
 };
@@ -95,7 +96,7 @@ async function syncSheet(items: Delivery[]) {
     const timestamp = `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
     data.push({
       range: `${range}!A${event_id + 1}:Q${event_id + 1}`,
-      values: [[event_id, timestamp, s.number, e.request_id, e.action, e.stage, e.previous_status ?? '',
+      values: [[event_id, timestamp, s.number ?? '', e.request_id, e.action, e.stage, e.previous_status ?? '',
         e.status, e.actor_name, s.requester, s.branch, s.position, Number(s.headcount), s.area,
         s.needed, s.requisition, s.assignment]],
     });
