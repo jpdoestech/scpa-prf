@@ -44,7 +44,7 @@ function seed() {
         occurred_at: reviewed, note: 'Please confirm the exact work schedule.' });
     }
     return {
-      ...demoNames, id: `demo-${i + 1}`, number: `PRF-2026-000${24 - i}`, status, version: events.length,
+      ...demoNames, id: `demo-${i + 1}`, number: status === 'approved' ? `PRF-2026-000${24 - i}` : null, status, version: events.length,
       form: { ...sampleForm, position, needed, headcount }, submitted_at: submitted,
       updated_at: events.at(-1).occurred_at, supervisor_at: ['hrd', 'approved'].includes(status) ? reviewed : null,
       hrd_at: status === 'approved' ? final : null, events,
@@ -199,7 +199,7 @@ export async function dashboard({ mode, id, status, search, page, rowsPerPage = 
       (s === 'closed' && ['returned', 'disapproved'].includes(r.status));
     const visible = candidates.filter(r => matches(r, status) && (mode !== 'inbox' || !inboxStatus || r.status === inboxStatus) &&
       [r.number, r.form.position, r.form.area, r.requester_name].join(' ').toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+      .sort((a, b) => b.submitted_at.localeCompare(a.submitted_at) || a.id.localeCompare(b.id));
     return {
       rows: visible.slice(page * rowsPerPage, (page + 1) * rowsPerPage),
       total: visible.length, counts: filters.map(s => candidates.filter(r => matches(r, s)).length),
@@ -223,7 +223,7 @@ export async function dashboard({ mode, id, status, search, page, rowsPerPage = 
   }
 
   const [result, ...counts] = await Promise.all([
-    query(status, search).order('updated_at', { ascending: false }).order('id')
+    query(status, search).order('submitted_at', { ascending: false }).order('id')
       .range(page * rowsPerPage, (page + 1) * rowsPerPage - 1),
     ...(mode === 'inbox' ? [] : filters.map(s => query(s, '', true))),
   ]);
@@ -265,7 +265,7 @@ export async function submit({ id, form, version }) {
     throw new Error('This request has changed. Refresh it before submitting.');
   }
   if (!row) {
-    row = { ...demoNames, id, number: `PRF-${at.slice(0, 4)}-${String(25 + demoRows.length - seedRows.length).padStart(5, '0')}`,
+    row = { ...demoNames, id, number: null,
       submitted_at: at, version: 0, events: [] };
     demoRows.unshift(row);
   }
@@ -288,6 +288,11 @@ export async function decide({ id, version, decision, note }) {
   if (decision === 'approve') {
     row[stage === 'supervisor' ? 'supervisor_at' : 'hrd_at'] = at;
     row.status = stage === 'supervisor' ? 'hrd' : 'approved';
+    if (row.status === 'approved' && row.number === null) {
+      const year = new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: 'Asia/Manila' }).format(new Date(at));
+      const last = Math.max(24, ...demoRows.map(item => Number(item.number?.split('-').at(-1)) || 0));
+      row.number = `PRF-${year}-${String(last + 1).padStart(5, '0')}`;
+    }
   } else {
     row.status = decision === 'return' ? 'returned' : 'disapproved';
   }

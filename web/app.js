@@ -1,6 +1,6 @@
 import { config, supabase, context, adminAccounts, dashboard, pendingApprovals, record, requestOptions, optionDirectory, editRequestOption, addRequestOption, submit, decide, setDemoRole, currentDemoRole, pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto } from './data.js';
-import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, day, dateTime } from './model.js';
-import { exportPrintPng, preparePrint } from './print.js';
+import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, day, dateTime, approvalTime, prfNumber } from './model.js';
+import { preparePrintImage, drawPrintImage, preparePrint, stampPrint } from './print.js';
 import { enhanceSelects, focusSelect } from './search-select.js';
 
 const app = document.querySelector('#app');
@@ -309,12 +309,12 @@ function renderList() {
       <th scope="col" role="columnheader">Date needed</th><th scope="col" role="columnheader">Status</th>
       <th scope="col" role="columnheader" class="data-action">Action</th></tr></thead>
     <tbody role="rowgroup">${result.rows.map(r => `<tr class="request-row" role="row">
-      <td class="record-number" role="cell">${escape(r.number)}</td>
+      <td class="record-number" role="cell">${escape(prfNumber(r))}</td>
       <td class="request-identity" role="cell"><strong>${escape(r.form.position)}</strong><small>${escape(screen === 'inbox' ? r.requester_name : r.form.area)}</small></td>
       <td class="due" role="cell"><span class="due-label">Needed </span>${escape(day(r.form.needed))}</td>
       <td class="request-status" role="cell">${badge(r.status)}</td>
       <td class="data-action" role="cell">${button('record', 'Open', 'secondary row-button', 'open',
-        `data-id="${escape(r.id)}" aria-label="Open ${escape(r.number)}, ${escape(r.form.position)}"`)}</td>
+        `data-id="${escape(r.id)}" aria-label="Open ${r.number ? `${escape(r.number)}, ` : ''}${escape(r.form.position)}"`)}</td>
     </tr>`).join('')}</tbody></table>`;
 }
 
@@ -425,7 +425,7 @@ function renderAccountForm(account, approvers, branches, branchField) {
         <div class="field-grid">
           ${field('account-name', 'Full name', `<input name="name" value="${escape(current.name)}" maxlength="100" required>`)}
           ${creating ? field('account-email', 'Email', '<input type="email" name="email" maxlength="254" autocomplete="off" required>') : ''}
-          ${field('account-branch', 'Assigned branch', `<select name="${branchField}" required>
+          ${field('account-branch', 'Assigned branch', `<select name="${branchField}" data-native-select required>
             <option value="">Choose a branch</option>
             ${inactiveBranch ? `<option value="${escape(inactiveBranch.id)}" selected hidden>${escape(inactiveBranch.name)} (inactive)</option>` : ''}
             ${choices.map(branch => `<option value="${escape(branch.id)}" ${selected(branchField, branch.id)}>${escape(branch.name)}</option>`).join('')}
@@ -523,7 +523,7 @@ function requestOptionField(kind, label, addLabel, names, selected) {
   const id = `request-option-${kind}`;
   return `<div class="request-option" data-option="${kind}">
     <label class="field" for="${id}">${label}
-      <select name="${kind}" id="${id}" required><option value="">Select an option</option>
+      <select name="${kind}" id="${id}" ${kind === 'branch' ? 'data-native-select' : ''} required><option value="">Select an option</option>
         ${choices.map(name => `<option value="${escape(name)}" ${name === selectedName ? 'selected' : ''}>${escape(name)}</option>`).join('')}
       </select>
     </label>
@@ -644,7 +644,7 @@ function detailView() {
   const decision = canDecide(r, person.id);
   const mayEdit = r.requester_id === person.id && r.status === 'returned';
   renderFrame(`${backButton('back', screenOrigin === 'inbox' ? 'Back to approval inbox' : 'Back to requests')}
-    <div class="heading"><div><p>${escape(r.number)}</p><h1 tabindex="-1">${escape(f.position)}</h1>
+    <div class="heading"><div><p>${escape(prfNumber(r))}</p><h1 tabindex="-1">${escape(f.position)}</h1>
       <div class="status-line">${badge(r.status)}${next ? `<span class="muted">Next action by ${escape(next)}</span>` : ''}</div></div>
       <div class="actions"><div class="print-choice"><select id="paper" aria-label="Paper size">
         <option ${paper === 'A4' ? 'selected' : ''}>A4</option><option ${paper === 'Letter' ? 'selected' : ''}>Letter</option>
@@ -662,6 +662,8 @@ function detailView() {
         ${fieldEntry('Requisition type', requisitions[f.requisition])}${fieldEntry('Work schedule', f.schedule)}
         ${fieldEntry('Requisition details', f.reason, true)}${fieldEntry('Qualifications', f.qualifications, true)}
         ${fieldEntry('Proposed salary', f.salary)}${fieldEntry('Allowance', f.allowance)}
+        ${fieldEntry('Supervisor approved', approvalTime(r.supervisor_at))}
+        ${fieldEntry('HRD approved', approvalTime(r.hrd_at))}
       </dl></section>
       <section class="panel panel-content"><h2>Request timeline</h2>
       <ol class="timeline">${events.map(e => `<li><strong>${escape(eventTitle(e))}</strong>
@@ -1118,26 +1120,27 @@ app.addEventListener('click', async e => {
     try {
       markBusy(true);
       const row = detail.row;
-      const prepared = await preparePrint(row, paper);
-      const preview = printReturn = { button: target, scroll: window.scrollY };
+      const prepared = await preparePrint(row, paper, detail.events);
+      const preview = printReturn = { button: target, scroll: window.scrollY, prepared,
+        filename: `${row.number ?? `PRF-pending-${row.id.slice(0, 8)}`}.png` };
       app.hidden = true;
       printPreview.hidden = false;
       window.scrollTo(0, 0);
       const printButton = printPreview.querySelector('[data-action="send-to-printer"]');
       printButton.focus({ preventScroll: true });
-      void exportPrintPng(prepared).then(blob => {
+      void preparePrintImage(prepared.svg).then(layer => {
         if (printReturn !== preview) return;
-        preview.blob = blob;
-        preview.url = URL.createObjectURL(blob);
-        printDownload.href = preview.url;
-        printDownload.download = `${row.number}.png`;
-        printDownload.removeAttribute('aria-disabled');
+        preview.layer = layer;
+        printDownload.disabled = false;
         if (canCopyImage) copyImageButton.disabled = false;
         if (action === 'export' && document.activeElement === printButton) printDownload.focus({ preventScroll: true });
       }).catch(() => {
         if (printReturn === preview) printStatus.textContent = 'Could not create the PNG. Printing is still available.';
       });
-      if (action === 'print' && window.matchMedia('(pointer: fine)').matches) window.print();
+      if (action === 'print' && window.matchMedia('(pointer: fine)').matches) {
+        stampPrint(prepared);
+        window.print();
+      }
     } catch (err) {
       banner(`Could not prepare the printout. ${err.message}`, true);
     } finally {
@@ -1148,21 +1151,46 @@ app.addEventListener('click', async e => {
 printPreview.querySelector('.print-controls').innerHTML = `<div class="actions">
   ${backButton('close-print', 'Back to request')}
   ${button('send-to-printer', 'Print', 'primary', 'print')}
-  <a class="button secondary" data-print-download aria-disabled="true">${icon('download')}Download PNG</a>
+  ${button('download-print', 'Download PNG', 'secondary', 'download', 'disabled')}
   ${button('copy-print', 'Copy image', 'secondary', 'copy', `disabled ${canCopyImage ? '' : 'hidden'}`)}
   </div><p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>
   <p class="print-export-status small" role="status"></p>`;
-const printDownload = printPreview.querySelector('[data-print-download]');
+const printDownload = printPreview.querySelector('[data-action="download-print"]');
 const copyImageButton = printPreview.querySelector('[data-action="copy-print"]');
 const printStatus = printPreview.querySelector('.print-export-status');
 printPreview.addEventListener('click', async event => {
   const action = event.target.closest('button')?.dataset.action;
   if (action === 'send-to-printer') {
+    stampPrint(printReturn.prepared);
     window.print();
-  } else if (action === 'copy-print' && printReturn?.blob) {
+  } else if (action === 'download-print' && printReturn?.layer) {
+    try {
+      const preview = printReturn;
+      const canvas = drawPrintImage(preview.prepared, preview.layer, 'Downloaded');
+      // Encode within the tap so the native download retains user activation.
+      const data = canvas.toDataURL('image/png').split(',')[1];
+      if (!data) throw new Error('Image unavailable.');
+      const bytes = Uint8Array.from(atob(data), value => value.charCodeAt(0));
+      if (preview.url) URL.revokeObjectURL(preview.url);
+      preview.url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+      const link = document.createElement('a');
+      link.href = preview.url;
+      link.download = preview.filename;
+      document.body.append(link);
+      link.click();
+      link.remove();
+    } catch {
+      printStatus.textContent = 'Could not download the PNG. Printing is still available.';
+    }
+  } else if (action === 'copy-print' && printReturn?.layer) {
     const preview = printReturn;
     try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': preview.blob })]);
+      const canvas = drawPrintImage(preview.prepared, preview.layer, 'Copied');
+      const image = new Promise((resolve, reject) => canvas.toBlob(blob => {
+        if (blob) resolve(blob);
+        else reject(new Error('Image unavailable.'));
+      }, 'image/png'));
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })]);
       if (printReturn === preview) printStatus.textContent = 'PRF image copied.';
     } catch {
       if (printReturn === preview) printStatus.textContent = 'Could not copy the image. Use Download PNG instead.';
@@ -1175,12 +1203,14 @@ printPreview.addEventListener('click', async event => {
     printReturn.button.focus({ preventScroll: true });
     window.scrollTo(0, printReturn.scroll);
     if (printReturn.url) URL.revokeObjectURL(printReturn.url);
-    printDownload.removeAttribute('href');
-    printDownload.setAttribute('aria-disabled', 'true');
+    printDownload.disabled = true;
     copyImageButton.disabled = true;
     printStatus.textContent = '';
     printReturn = null;
   }
+});
+window.addEventListener('beforeprint', () => {
+  if (printReturn) stampPrint(printReturn.prepared);
 });
 app.addEventListener('submit', async event => {
   event.preventDefault();

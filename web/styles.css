@@ -289,7 +289,6 @@ textarea{resize:vertical}
 #print-preview{width:min(100%,var(--paper-width,210mm));margin-inline:auto;padding:.75rem}
 .print-controls{padding:.25rem 0 .75rem}
 .print-controls .back{margin:0}
-.print-controls a[aria-disabled=true]{opacity:.5}
 .print-export-status{margin-top:.35rem;color:var(--deep)}
 .print-export-status:empty{display:none}
 .print-phone-help{margin-top:.5rem}
@@ -297,6 +296,9 @@ textarea{resize:vertical}
 #print-root svg{display:block;width:100%;height:auto;margin-inline:auto}
 #print-root .print-extra{margin:4mm 2mm 0;font-size:9pt;line-height:1.32;white-space:pre-wrap;overflow-wrap:anywhere}
 #print-root .print-extra p{margin:1.2mm 0}
+#print-root .print-supplement{margin:3mm 2mm 0;font-size:9pt;line-height:1.4;overflow-wrap:anywhere}
+#print-root .print-supplement p{margin:1mm 0;white-space:pre-wrap}
+#print-root .print-supplement h2{margin-top:2.5mm;font-size:10pt;letter-spacing:normal}
 @media(pointer:fine){.print-phone-help{display:none}}
 .scroll-top{position:fixed;z-index:3;inset-inline-end:max(1rem,env(safe-area-inset-right));bottom:1rem;width:46px;height:46px;padding:0;border-radius:50%;border-color:#9cb7a9;color:var(--deep);background:rgba(248,253,250,.78);backdrop-filter:blur(8px);box-shadow:0 3px 12px #173c2a1a}
 .scroll-top:hover{background:#e4f1e9}
@@ -361,6 +363,8 @@ textarea{resize:vertical}
   #print-preview{width:100%;padding:0;margin:0}
   .print-controls{display:none!important}
   #print-root svg,#print-root .print-extra{break-inside:avoid}
+  #print-root .print-supplement h2{break-after:avoid}
+  #print-root .print-supplement p{break-inside:avoid}
 }
 .measure-print{position:absolute;visibility:hidden;inset:0 auto auto 0;font-family:Arial,sans-serif;pointer-events:none}
 .measure-print .print-extra{margin:4mm 2mm 0;font-size:9pt;line-height:1.32;overflow-wrap:anywhere}
