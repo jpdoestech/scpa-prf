@@ -39,6 +39,15 @@ Deno.serve(async (req: Request) => {
       const { data: profiles, error: profileError } = await db.from('staff')
         .select('id,name,account_role,active,branch_id,supervisor_override,hrd_override').in('id', ids);
       if (profileError) return reply({ error: 'Could not load PRF staff profiles.' }, 500);
+      const { data: memberships, error: membershipError } = await db.from('staff_branch_memberships')
+        .select('staff_id,branch_id').in('staff_id', ids).order('branch_id');
+      if (membershipError) return reply({ error: 'Could not load branch assignments.' }, 500);
+      const assigned = new Map<string, string[]>();
+      for (const item of memberships) {
+        const branches = assigned.get(item.staff_id) ?? [];
+        branches.push(item.branch_id);
+        assigned.set(item.staff_id, branches);
+      }
       const byId = new Map(profiles.map(profile => [profile.id, profile]));
       for (const account of data.users) {
         const profile = byId.get(account.id);
@@ -46,7 +55,8 @@ Deno.serve(async (req: Request) => {
           id: account.id, email: account.email ?? '', name: profile?.name ?? '',
           role: profile?.account_role ?? '', active: profile?.active ?? null,
           branch_id: profile?.branch_id ?? '',
-          branch: branchNames.get(profile?.branch_id) ?? '',
+          branch_ids: assigned.get(account.id) ?? [],
+          branch: (assigned.get(account.id) ?? []).map(id => branchNames.get(id)).filter(Boolean).join(', '),
           supervisor_id: profile?.supervisor_override ?? '', hrd_id: profile?.hrd_override ?? '',
           superAdmin: account.app_metadata.prf_super_admin === true,
         });
@@ -93,7 +103,12 @@ Deno.serve(async (req: Request) => {
 
   const email = text(values.email).toLowerCase();
   const name = text(values.name);
-  const branchId = text(values.branch_id);
+  const branchIds = Array.isArray(values.branch_ids) ? [...new Set(values.branch_ids.map(text))] : null;
+  if (values.branch_ids !== undefined && (!branchIds?.length || branchIds.some(id => !id || id.length > 100))) {
+    return reply({ error: 'Choose at least one branch.' }, 400);
+  }
+  const requestedBranch = text(values.branch_id);
+  const branchId = branchIds ? (branchIds.includes(requestedBranch) ? requestedBranch : branchIds[0]) : requestedBranch;
   const previousBranch = text(values.branch);
   const role = text(values.role);
   const active = action === 'create' || values.active === 'true';
@@ -107,7 +122,7 @@ Deno.serve(async (req: Request) => {
   if (!(branchId || previousBranch) || branchId.length > 100 || previousBranch.length > 100) {
     return reply({ error: 'Choose an existing branch.' }, 400);
   }
-  if (Boolean(supervisor_id) !== Boolean(hrd_id) || (active && role === 'employee' && !supervisor_id)
+  if (Boolean(supervisor_id) !== Boolean(hrd_id)
     || (supervisor_id && hrd_id &&
       (!uuid.test(supervisor_id) || !uuid.test(hrd_id) || supervisor_id === hrd_id || id === supervisor_id || id === hrd_id))) {
     return reply({ error: 'Choose two distinct approvers.' }, 400);
@@ -118,7 +133,12 @@ Deno.serve(async (req: Request) => {
   if (branchError) return reply({ error: 'Could not check the selected branch.' }, 500);
   if (!branch) return reply({ error: 'Choose an existing branch.' }, 400);
   if (action === 'create' && !branch.active) return reply({ error: 'Choose an active branch.' }, 400);
-  const profile = { name, branch_id: branch.id, role, active, supervisor_id, hrd_id };
+  if (action === 'create' && branchIds) {
+    const { count, error } = await db.from('branches').select('id', { count: 'exact', head: true }).in('id', branchIds).eq('active', true);
+    if (error) return reply({ error: 'Could not check the selected branches.' }, 500);
+    if (count !== branchIds.length) return reply({ error: 'Choose active branches.' }, 400);
+  }
+  const profile = { name, branch_id: branch.id, ...(branchIds ? { branch_ids: branchIds } : {}), role, active, supervisor_id, hrd_id };
   if (action === 'save') {
     const { error } = await db.rpc('prf_save_staff', { user_id: id, profile });
     if (error?.code === 'P0001') return reply({ error: error.message }, 409);
