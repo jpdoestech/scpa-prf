@@ -25,7 +25,9 @@ await build({
   bundle: true,
   minify: true,
   format: 'esm',
+  splitting: true,
   target: ['es2022'],
-  outfile: 'dist/app.js',
+  outdir: 'dist',
+  chunkNames: 'assets/[name]-[hash]',
   define: { __PUBLIC_CONFIG__: JSON.stringify(demo ? { demo } : { url, key, demo }) },
 });

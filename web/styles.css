@@ -328,6 +328,8 @@ textarea{resize:vertical}
 #print-preview{width:min(100%,var(--paper-width,210mm));margin-inline:auto;padding:.75rem}
 .print-controls{padding:.25rem 0 .75rem}
 .print-controls .back{margin:0}
+.print-download-choice{display:inline-flex;align-items:center;gap:.35rem}
+.print-download-choice select{font-size:1rem}
 .print-template-choice{display:flex;align-items:center;flex-wrap:wrap;gap:.45rem;margin-top:.6rem;font-weight:700}
 .print-template-settings{margin:0;padding:.2rem .65rem;border:1px solid var(--line);border-radius:9px}
 .print-phone-help{margin-top:.5rem}
@@ -336,8 +338,7 @@ textarea{resize:vertical}
 .print-sheet+.print-sheet{margin-top:.75rem}
 .print-sheet>svg,.print-measure>svg{display:block;width:100%;height:auto;margin-inline:auto}
 .print-measure{position:absolute;left:-200vw;top:0;visibility:hidden;pointer-events:none}
-.print-note{margin:0;padding:1mm 2mm;font-family:Arial,sans-serif;font-size:9pt;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
-h2.print-note{padding-top:2.5mm;font-size:10pt;letter-spacing:normal}
+.print-footer{flex:none;margin-top:auto;padding-top:2mm;border-top:1px solid #caa6ab;color:#781b24;font-family:Arial,sans-serif;font-size:9pt;line-height:1.35;overflow-wrap:anywhere}
 @media(pointer:fine){.print-phone-help{display:none}}
 .scroll-top{position:fixed;z-index:3;inset-inline-end:max(1rem,env(safe-area-inset-right));bottom:1rem;width:46px;height:46px;padding:0;border-radius:50%;border-color:#9cb7a9;color:var(--deep);background:rgba(248,253,250,.78);backdrop-filter:blur(8px);box-shadow:0 3px 12px #173c2a1a}
 .scroll-top:hover{background:#e4f1e9}
@@ -405,7 +406,8 @@ h2.print-note{padding-top:2.5mm;font-size:10pt;letter-spacing:normal}
   html,body{margin:0!important;background:white!important;color:black!important}
   #print-preview{width:100%;padding:0;margin:0}
   .print-controls,.popup-notice{display:none!important}
-  .print-sheet{padding:var(--print-inset,14mm);break-inside:avoid;break-after:page}
+  .print-sheet{display:flex;flex-direction:column;min-height:calc(var(--print-paper-height,297mm) - .5mm);padding:var(--print-inset,14mm);break-inside:avoid;break-after:page}
+  .print-sheet>svg{flex:none}
   .print-sheet+.print-sheet{margin-top:0}
   .print-sheet:last-child{break-after:auto}
 }

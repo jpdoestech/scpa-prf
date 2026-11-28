@@ -1376,7 +1376,7 @@ app.addEventListener('click', async e => {
       const template = templates[0];
       const prepared = await preparePrint(row, paper, events, template);
       const preview = printReturn = { button: target, scroll: window.scrollY, row, events, paper, templates, template, prepared,
-        filename: `${row.number ?? `PRF-pending-${row.id.slice(0, 8)}`}.png` };
+        filename: row.number ?? `PRF-pending-${row.id.slice(0, 8)}` };
       printTemplateSelect.replaceChildren(...templates.map(key => new Option(printTemplateLabels[key], key)));
       printTemplateSelect.closest('label').hidden = templates.length < 2;
       app.hidden = true;
@@ -1395,11 +1395,15 @@ app.addEventListener('click', async e => {
 printPreview.querySelector('.print-controls').innerHTML = `<div class="actions">
   ${backButton('close-print', 'Back to request')}
   ${button('send-to-printer', 'Print', 'primary', 'print')}
-  ${button('download-print', 'Download PNG', 'secondary', 'download', 'disabled')}
+  <div class="print-download-choice">
+    <select id="print-download-format" aria-label="Download as"><option value="pdf">PDF</option><option value="png">PNG</option></select>
+    ${button('download-print', 'Download', 'secondary', 'download', 'disabled')}
+  </div>
   ${button('copy-print', 'Copy image', 'secondary', 'copy', `disabled ${canCopyImage ? '' : 'hidden'}`)}
   </div><label class="print-template-choice" hidden>Print template <select id="print-template-choice" aria-label="Print template"></select></label>
   <p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>`;
 const printDownload = printPreview.querySelector('[data-action="download-print"]');
+const printDownloadFormat = document.getElementById('print-download-format');
 const copyImageButton = printPreview.querySelector('[data-action="copy-print"]');
 const printTemplateSelect = document.getElementById('print-template-choice');
 const printButton = printPreview.querySelector('[data-action="send-to-printer"]');
@@ -1412,10 +1416,10 @@ function loadPrintImages(preview) {
   void preparePrintImage(prepared.sections).then(layer => {
     if (printReturn !== preview || preview.prepared !== prepared) return;
     preview.layer = layer;
-    printDownload.disabled = false;
+    printDownload.disabled = Boolean(preview.downloading);
     copyImageButton.disabled = !canCopyImage;
   }).catch(() => {
-    if (printReturn === preview && preview.prepared === prepared) popupNotice('Could not create the PNG. Printing is still available.', true);
+    if (printReturn === preview && preview.prepared === prepared) popupNotice('Could not prepare the download. Printing is still available.', true);
   });
 }
 
@@ -1432,7 +1436,7 @@ printTemplateSelect.addEventListener('change', async () => {
     loadPrintImages(preview);
   } catch (error) {
     printTemplateSelect.value = preview.template;
-    printDownload.disabled = !preview.layer;
+    printDownload.disabled = !preview.layer || Boolean(preview.downloading);
     copyImageButton.disabled = !preview.layer || !canCopyImage;
     popupNotice(error.message, true);
   } finally {
@@ -1446,23 +1450,40 @@ printPreview.addEventListener('click', async event => {
     stampPrint(printReturn.prepared);
     window.print();
   } else if (action === 'download-print' && printReturn?.layer) {
+    const preview = printReturn;
+    if (preview.downloading) return;
+    const format = printDownloadFormat.value;
+    const { prepared, layer } = preview;
+    preview.downloading = printDownload.disabled = printDownloadFormat.disabled = true;
     try {
-      const preview = printReturn;
-      const canvas = drawPrintImage(preview.prepared, preview.layer, 'Downloaded');
-      // Encode within the tap so the native download retains user activation.
-      const data = canvas.toDataURL('image/png').split(',')[1];
-      if (!data) throw new Error('Image unavailable.');
-      const bytes = Uint8Array.from(atob(data), value => value.charCodeAt(0));
+      let file;
+      if (format === 'pdf') {
+        const { createPrintPdf } = await import('./print-pdf.js');
+        file = await createPrintPdf(prepared, layer);
+      } else {
+        // Encode PNG within the tap to retain user activation for mobile downloads.
+        const data = drawPrintImage(prepared, layer, 'Downloaded').toDataURL('image/png').split(',')[1];
+        if (!data) throw new Error('Image unavailable.');
+        const bytes = Uint8Array.from(atob(data), value => value.charCodeAt(0));
+        file = new Blob([bytes], { type: 'image/png' });
+      }
+      if (printReturn !== preview || preview.prepared !== prepared) return;
       if (preview.url) URL.revokeObjectURL(preview.url);
-      preview.url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+      preview.url = URL.createObjectURL(file);
       const link = document.createElement('a');
       link.href = preview.url;
-      link.download = preview.filename;
+      link.download = `${preview.filename}.${format}`;
       document.body.append(link);
       link.click();
       link.remove();
     } catch {
-      popupNotice('Could not download the PNG. Printing is still available.', true);
+      if (printReturn === preview) popupNotice(`Could not download the ${format.toUpperCase()}. Printing is still available.`, true);
+    } finally {
+      preview.downloading = false;
+      if (printReturn === preview) {
+        printDownloadFormat.disabled = false;
+        printDownload.disabled = !preview.layer;
+      }
     }
   } else if (action === 'copy-print' && printReturn?.layer) {
     const preview = printReturn;
@@ -1475,7 +1496,7 @@ printPreview.addEventListener('click', async event => {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })]);
       if (printReturn === preview) popupNotice('PRF image copied.');
     } catch {
-      if (printReturn === preview) popupNotice('Could not copy the image. Use Download PNG instead.', true);
+      if (printReturn === preview) popupNotice('Could not copy the image. Choose PNG under Download as to save a copy.', true);
     }
   } else if (action === 'close-print') {
     printPreview.hidden = true;
@@ -1486,6 +1507,7 @@ printPreview.addEventListener('click', async event => {
     window.scrollTo(0, printReturn.scroll);
     if (printReturn.url) URL.revokeObjectURL(printReturn.url);
     printDownload.disabled = true;
+    printDownloadFormat.disabled = false;
     copyImageButton.disabled = true;
     popupNotice();
     printReturn = null;
