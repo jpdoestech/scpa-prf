@@ -37,6 +37,7 @@ const paths = {
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   pin: '<path d="M19 10c0 5-7 10-7 10S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2"/>',
+  building: '<path d="M4 20h16M6 20V5h9v15m0-11h3v11M9 8h3m-3 4h3m-3 4h3"/>',
 };
 const icon = key => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[key]}</svg>`;
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => (
@@ -991,9 +992,9 @@ const optionActions = {
   delete: { label: 'Delete', icon: 'close', message: 'This permanently removes the option from the directory. Existing requests keep their saved values.' },
 };
 
-function optionDialog(title, content, launcher, { sheet = false, save, alert = Boolean(save) } = {}) {
+function optionDialog(title, content, launcher, { sheet = false, directory = false, save, alert = Boolean(save) } = {}) {
   const dialog = document.createElement('dialog');
-  dialog.className = `option-dialog${sheet ? ' option-action-sheet' : ''}`;
+  dialog.className = `option-dialog${sheet ? ' option-action-sheet' : ''}${directory ? ' option-directory-dialog' : ''}`;
   dialog.setAttribute('aria-labelledby', 'option-dialog-title');
   dialog.innerHTML = `<form method="dialog"><h2 id="option-dialog-title">${escape(title)}</h2>${content}</form>`;
   const form = dialog.querySelector('form');
@@ -1073,7 +1074,7 @@ function confirmOption(action, name, launcher, save, updatedName) {
   const { label, icon: glyph, message } = optionActions[action];
   const subject = updatedName === undefined ? `“${name}”` : `“${name}” to “${updatedName}”`;
   return optionDialog(`${label} this option?`, `<p id="option-dialog-description">
-    <strong>${escape(subject)}</strong> ${message}</p>${optionDialogFooter(action, label, glyph, action === 'delete')}`, launcher, { save });
+    <strong>${escape(subject)}</strong> ${message}</p>${optionDialogFooter(action, label, glyph, action === 'delete')}`, launcher, { save, directory: true });
 }
 
 async function manageOption(target, option) {
@@ -1084,7 +1085,7 @@ async function manageOption(target, option) {
     const selected = await optionDialog(option.name, `<div class="option-sheet-actions">${choices.map(key => {
       const { label, icon: glyph } = optionActions[key];
       return `<button class="button secondary ${key === 'delete' ? 'option-delete' : ''}" type="submit" value="${key}">${icon(glyph)}${label}</button>`;
-    }).join('')}</div>${button('dismiss-option-dialog', 'Cancel', 'secondary', 'close', 'autofocus')}`, target, { sheet: true });
+    }).join('')}</div><div class="actions option-dialog-footer">${button('dismiss-option-dialog', 'Cancel', 'secondary', 'close', 'autofocus')}</div>`, target, { sheet: true, directory: true });
     if (!selected) return;
     action = selected.action;
   }
@@ -1093,7 +1094,7 @@ async function manageOption(target, option) {
     if (action === 'rename') {
       const input = await optionDialog('Rename option', `<div class="option-rename-fields">${field('rename-option-name', 'New name',
         `<input name="name" value="${escape(newName ?? option.name)}" maxlength="100" required autofocus pattern=".*\\S.*">`)}</div>
-        ${optionDialogFooter('continue', 'Continue', 'next', false, false)}`, target);
+        ${optionDialogFooter('continue', 'Continue', 'next', false, false)}`, target, { directory: true });
       if (!input) return;
       newName = input.value.trim();
     }
@@ -1101,34 +1102,39 @@ async function manageOption(target, option) {
       () => editRequestOption(kind, option.id, action, newName ?? null), newName);
     if (result) {
       adminDirectory = null;
-      await openRequestOptions(`Option ${action === 'rename' ? 'renamed' : `${action}d`}.`);
+      const row = target.closest('.option-entry');
+      const nextRow = row.nextElementSibling ?? row.previousElementSibling;
+      await openRequestOptions(`Option ${action === 'rename' ? 'renamed' : `${action}d`}.`, true,
+        action === 'delete' ? nextRow?.dataset.id : option.id);
       return;
     }
   } while (action === 'rename');
 }
 
-async function openRequestOptions(message = '', focusTab = false) {
+async function openRequestOptions(message = '', focusTab = false, focusEntry = '') {
   const revision = ++routeRevision;
   clearTimeout(searchTimer);
   screen = 'options';
   const label = optionKinds[optionKind];
   const back = backButton('close-options', optionOrigin?.mode === 'admin' ? 'Back to users'
     : optionOrigin?.mode === 'inbox' ? 'Back to approval inbox' : 'Back to requests');
-  const heading = `${back}<div class="heading"><h1 tabindex="-1">Request options</h1></div>
+  const tabIcons = { branch: 'building', position: 'users', area: 'pin' };
+  const heading = `<div class="heading register-heading option-heading"><h1 tabindex="-1">Request options</h1>${back}</div>
     <div class="option-kinds" role="tablist" aria-label="Option categories">${Object.entries(optionKinds)
       .filter(([kind]) => kind !== 'branch' || person.superAdmin).map(([kind, title]) =>
-      button('option-kind', title, 'option-tab', 'list', `data-id="${kind}" id="option-tab-${kind}" role="tab"
+      button('option-kind', title, 'option-tab', tabIcons[kind], `data-id="${kind}" id="option-tab-${kind}" role="tab"
         aria-controls="option-panel" aria-selected="${kind === optionKind}" tabindex="${kind === optionKind ? 0 : -1}"`)).join('')}</div>`;
   const scroll = message ? window.scrollY : 0;
   const panelAttrs = `id="option-panel" role="tabpanel" aria-labelledby="option-tab-${optionKind}"`;
   renderFrame(`${heading}<div ${panelAttrs}><p class="empty" role="status">Loading request options…</p></div>`);
+  if (focusTab) app.querySelector('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true });
   try {
     const options = await optionDirectory(optionKind);
     if (revision !== routeRevision) return;
-    renderFrame(`${heading}<section ${panelAttrs} class="panel panel-content option-directory">
+    renderFrame(`${heading}<section ${panelAttrs} class="panel option-directory">
       <form id="add-directory-option" class="option-edit-row">
         ${field('new-directory-option', `New ${label.toLowerCase()}`, '<input name="name" maxlength="100" required>')}
-        ${submitButton(`Add ${label.toLowerCase()}`, 'plus')}
+        <button class="button primary" type="submit" data-mutation aria-label="Add ${label.toLowerCase()}">${icon('plus')}Add</button>
       </form>
       ${options.length ? `<ul class="option-rows">${options.map(option => {
         const id = escape(option.id);
@@ -1146,7 +1152,9 @@ async function openRequestOptions(message = '', focusTab = false) {
     </section>`);
     popupNotice(message);
     window.scrollTo(0, scroll);
-    app.querySelector(focusTab ? '[role="tab"][aria-selected="true"]' : 'h1')?.focus({ preventScroll: true });
+    const entry = focusEntry && [...app.querySelectorAll('.option-entry')].find(row => row.dataset.id === focusEntry);
+    const launcher = entry && [...entry.querySelectorAll('button')].find(button => button.getClientRects().length);
+    (launcher || app.querySelector(focusTab ? '[role="tab"][aria-selected="true"]' : 'h1'))?.focus({ preventScroll: true });
   } catch (err) {
     if (revision !== routeRevision) return;
     renderFrame(`${heading}<div ${panelAttrs}>${button('request-options', 'Try again', 'secondary', 'retry')}</div>`);
@@ -1655,7 +1663,7 @@ app.addEventListener('submit', async event => {
     if (fromUsers) {
       adminDirty = false;
       await openAdmin('', `Added branch ${confirmed.value.branch.name}.`);
-    } else await openRequestOptions('Option added.');
+    } else await openRequestOptions('Option added.', true);
     return;
   }
   markBusy(true);
