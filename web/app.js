@@ -4,7 +4,7 @@ import {
   pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto, employeeDirectory, saveEmployeeBranches,
   printTemplates, savePrintTemplates,
 } from './data.js';
-import { statuses, services, assignments, requisitions, canDecide, skippedApproval, nextActor, eventTitle, correctionHistory, neededDateRange, dateTime, approvalTime, prfNumber } from './model.js';
+import { statuses, services, assignments, requisitions, canDecide, canEditRequest, skippedApproval, nextActor, eventTitle, correctionHistory, neededDateRange, dateTime, approvalTime, prfNumber } from './model.js';
 import { preparePrintImage, drawPrintImage, preparePrint, stampPrint } from './print.js';
 import { enhanceSelects, focusSelect } from './search-select.js';
 
@@ -192,20 +192,28 @@ function markBusy(value) {
   for (const node of app.querySelectorAll('[data-mutation]')) node.disabled = value;
 }
 
-function renderLogin(message = '', error = false, inactive = false) {
+function renderLogin(message = '', inactive = false) {
   app.setAttribute('aria-busy', 'false');
-  app.innerHTML = `<div class="login"><div class="login-shell"><div class="login-masthead">${logo}</div><article>
-    <h1>${inactive ? 'Staff access required' : 'Sign in'}</h1>
-    <p class="muted">${inactive ? 'Ask your PRF administrator to activate your staff profile.' : 'Sign in with the email and password for your PRF account.'}</p>
-    ${inactive ? button('signout', 'Sign out', 'secondary', 'exit', 'style="margin-top:1rem"') :
+  app.innerHTML = `<div class="login"><div class="login-shell"><div class="login-masthead">${logo}</div><article aria-labelledby="sign-in-heading">
+    <h1 id="sign-in-heading">${inactive ? 'Staff access required' : 'Sign in'}</h1>
+    ${inactive ? '<p class="muted">Ask your PRF administrator to activate your staff profile.</p>' : ''}
+    <p id="login-error" class="login-feedback" role="alert" tabindex="-1" hidden></p>
+    ${inactive ? button('signout', 'Sign out', 'secondary', 'exit') :
       `<form id="login-form">
         <label class="field">Email<input type="email" name="email" autocomplete="username" required></label>
         <label class="field">Password<input type="password" name="password" autocomplete="current-password" required></label>
         ${submitButton('Sign in', 'enter')}
-        <p class="muted small">For account access or a password reset, contact your PRF administrator.</p>
       </form>`}
+    ${inactive ? '' : '<p class="login-help muted small">For account access or a password reset, contact your PRF administrator.</p>'}
   </article></div></div>`;
-  popupNotice(message, error);
+  showLoginError(message);
+}
+
+function showLoginError(message = '') {
+  const feedback = document.getElementById('login-error');
+  feedback.hidden = !message;
+  feedback.textContent = message;
+  if (message) feedback.focus();
 }
 
 function renderFrame(content) {
@@ -821,9 +829,15 @@ function formView(options) {
     </select><small id="officer-availability" hidden>No assigned Officer/Agent covers this branch.</small>`)
     : edit?.officer_name ? `<div class="field"><strong>Request on behalf of</strong><p>${escape(edit.officer_name)}</p></div>` : '';
 
-  renderFrame(`<div class="heading register-heading request-editor-heading"><div><h1 tabindex="-1">${edit ? 'Revise request' : 'New request'}</h1>
+  const heading = edit ? (edit.status === 'returned' ? 'Revise request' : 'Edit request') : 'New request';
+  const editingPending = edit && edit.status !== 'returned';
+  const submitLabel = editingPending ? 'Save changes'
+    : (edit ? 'Resubmit' : 'Submit') + (delegate || edit?.officer_id ? ' request' : ' to supervisor');
+  renderFrame(`<div class="heading register-heading request-editor-heading"><div><h1 tabindex="-1">${heading}</h1>
       <div class="request-editor-context">${edit ? badge(edit.status) : ''}<p>${escape(person.name)}</p></div></div>${backButton('back', 'Back to requests')}</div>
     <form id="request-form" class="sheet request-editor">
+      ${editingPending && edit.officer_approval_required && edit.officer_at
+        ? '<p class="muted small">Saving changes requires another Officer/Agent review.</p>' : ''}
       <section class="panel request-panel" aria-labelledby="personnel-heading">
         <h2 id="personnel-heading">${icon('users')}Personnel needed</h2><div class="field-grid">
         ${requestOptionFields(options, { ...values, branch: edit?.branch_name ?? person.branch }, officerField)}
@@ -850,8 +864,7 @@ function formView(options) {
         ${input('salary', 'Proposed monthly / daily salary (optional)', 'text', 'maxlength="36" placeholder="e.g., ₱18,000 / month"')}
         ${input('allowance', 'Allowance (optional)', 'text', 'maxlength="40"')}
       </div></section>
-      <div class="actions request-editor-actions">${submitButton(delegate || edit?.officer_id ? (edit ? 'Resubmit request' : 'Submit request')
-        : (edit ? 'Resubmit to supervisor' : 'Submit to supervisor'), 'send')}
+      <div class="actions request-editor-actions">${submitButton(submitLabel, editingPending ? 'check' : 'send')}
       ${button('back', 'Cancel', 'secondary', 'close')}</div>
     </form>`);
   conditionalFields();
@@ -905,7 +918,7 @@ function detailView() {
   const next = nextActor(r);
   const decision = canDecide(r, person.id);
   const skipped = person.canOverrideApproval ? skippedApproval(r, person.id) : '';
-  const mayEdit = r.requester_id === person.id && r.status === 'returned';
+  const mayEdit = canEditRequest(r, person.id);
   const approvalDates = fieldEntry(r.officer_approval_required ? 'Officer/Agent approved' : 'Officer/Agent step auto-approved', approvalTime(r.officer_at)) +
     fieldEntry('Supervisor approved', approvalTime(r.supervisor_at)) + fieldEntry('HRD approved', approvalTime(r.hrd_at));
   renderFrame(`${backButton('back', screenOrigin === 'inbox' ? 'Back to approval inbox' : 'Back to requests')}
@@ -914,7 +927,7 @@ function detailView() {
       <div class="actions"><div class="print-choice"><select id="paper" aria-label="Paper size">
         <option ${paper === 'A4' ? 'selected' : ''}>A4</option><option ${paper === 'Letter' ? 'selected' : ''}>Letter</option>
       </select>${button('export', 'Print/Export PRF', 'secondary', 'print', 'data-mutation')}</div>
-      ${mayEdit ? button('revise', 'Revise request', 'primary', 'edit') : ''}</div>
+      ${mayEdit ? button('revise', r.status === 'returned' ? 'Revise request' : 'Edit request', 'primary', 'edit') : ''}</div>
     </div>
     <div class="detail-layout">
       <section class="panel request-panel" aria-labelledby="request-details-heading"><h2 id="request-details-heading">${icon('list')}Request details</h2>
@@ -1194,7 +1207,7 @@ async function start() {
   if (supabase) {
     const { data, error } = await supabase.auth.getSession();
     if (error || !data.session) {
-      renderLogin(error?.message, Boolean(error));
+      renderLogin(error?.message);
       return;
     }
   }
@@ -1205,7 +1218,7 @@ async function start() {
     const superAdmin = Boolean(user?.email_confirmed_at && user.app_metadata.prf_super_admin === true);
     person = profile ? { ...profile, superAdmin } : superAdmin
       ? { id: user.id, name: adminDisplayName(), superAdmin, adminOnly: true } : null;
-    if (!person) return renderLogin('', false, true);
+    if (!person) return renderLogin('', true);
     if (user) void loadOwnPhoto(user.id).then(photo => {
       if (photo && accountUser?.id === user.id && !avatarUrl) setProfilePhoto(photo);
     }).catch(() => { /* Initials stay visible if the photo cannot be loaded. */ });
@@ -1216,7 +1229,7 @@ async function start() {
     else if (person.superAdmin) await openAdmin();
     else await goList();
   } catch (err) {
-    renderLogin(err.message, true, true);
+    renderLogin(err.message, true);
   }
 }
 
@@ -1482,7 +1495,7 @@ app.addEventListener('click', async e => {
     requestListReturn = { mode: screen, page, filter, inboxStatus, search, scroll: window.scrollY };
     screenOrigin = 'requests';
     await startRequest();
-  } else if (action === 'revise') {
+  } else if (action === 'revise' && detail && canEditRequest(detail.row, person?.id)) {
     await startRequest(detail.row);
   } else if (action === 'retry-request') {
     await startRequest(edit);
@@ -1721,6 +1734,7 @@ app.addEventListener('submit', async event => {
   popupNotice();
   try {
     if (form.id === 'login-form') {
+      showLoginError();
       const email = values.email.trim().toLowerCase();
       const { error } = await supabase.auth.signInWithPassword({ email, password: values.password });
       if (error) throw error;
@@ -1779,10 +1793,13 @@ app.addEventListener('submit', async event => {
       else if (values.action === 'reset') await openAdmin(values.account_id, 'Password reset.');
       else await openAdmin(values.account_id, 'PRF profile saved.');
     } else if (form.id === 'request-form') {
+      const editingPending = edit && edit.status !== 'returned';
       const row = await submit({ id: pendingId, form: values, version: edit?.version });
       requestDirty = false;
       const recipient = row.status === 'officer' ? 'the Officer/Agent' : 'the supervisor';
-      await openRecord(row.id, screenOrigin, `Request ${edit ? 'resubmitted' : 'submitted'} to ${recipient}.`);
+      const message = editingPending ? 'Request updated.'
+        : `Request ${edit ? 'resubmitted' : 'submitted'} to ${recipient}.`;
+      await openRecord(row.id, screenOrigin, message);
     } else if (form.id === 'decision-form') {
       const request = detail.row;
       const save = () => decide({ id: request.id, version: request.version, decision: values.decision, note: values.note });
@@ -1795,7 +1812,10 @@ app.addEventListener('submit', async event => {
       await openRecord(row.id, screenOrigin, override ? 'Approval override recorded.' : 'Decision recorded.');
     }
   } catch (err) {
-    popupNotice(err.message, true);
+    if (form.id === 'login-form' && form.isConnected) {
+      showLoginError(err.code === 'invalid_credentials' ? 'Email or password is incorrect.' : err.message);
+    }
+    else popupNotice(err.message, true);
   } finally {
     markBusy(false);
   }

@@ -50,6 +50,8 @@ Use the shared `data-search-select` control for searchable directories. Choosing
 
 Requesters follow updates in **My requests**. Officer/Agent accounts with delegated requests, Supervisors, and HRD check **Approval inbox** for requests awaiting a decision. The browser only reads requests and timelines it is allowed to see. PostgreSQL functions validate mutations, enforce stage order, and record a delivery item in the same transaction as the action.
 
+From **My requests**, open a pending PRF and select **Edit request** before either the Supervisor or HRD approves it. Saving records an edit in the timeline and sends delegated PRFs back through Officer/Agent review when required.
+
 When a requester resubmits a returned PRF, the timeline shows the **From** and **To** values for each changed field. The same history appears in the print and export preview.
 
 The **Approval inbox** badge counts requests currently awaiting your decision, across all inbox views. Use the separate status filter to find requests assigned to you at either review stage or with an Approved, Returned, or Disapproved outcome. **Compact** controls table and pagination density. The request tables remember your page size and density in the current browser.

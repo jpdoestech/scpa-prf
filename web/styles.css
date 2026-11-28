@@ -243,18 +243,18 @@ textarea{resize:vertical}
 .print-choice select{flex:none;min-width:5.5rem;font-size:1rem}
 .print-choice .button{gap:.42rem;padding-inline:.65rem}
 @media(min-width:320px){.request-detail-groups .details{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.login{min-height:100dvh;display:grid;place-items:center;padding:1rem;background:#edf2ef}
-.login-shell{width:min(100%,46rem);display:grid;background:#fff;border:1px solid #d8e3dc;border-radius:15px;overflow:hidden;box-shadow:0 18px 50px #113f3010}
-.login-masthead{display:flex;align-items:flex-end;background:linear-gradient(145deg,#12483c,#1a6e55);padding:1.2rem;color:#fff}
-.login-masthead .brand img{width:106px;background:white;padding:.25rem}
-.login article{min-width:0;padding:clamp(1.2rem,5vw,2.15rem)}
-.login h1{margin-bottom:.55rem}
-.login form{display:grid;gap:.9rem;margin-top:1.35rem}
+.login{min-height:100dvh;display:grid;place-items:center;padding:1rem}
+.login-shell{--login-inset:clamp(1rem,4vw,1.4rem);width:min(100%,26rem);background:var(--white);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 14px 32px #103d340d}
+.login-masthead{padding:.8rem var(--login-inset);background:var(--surface-subtle);border-bottom:1px solid var(--line);color:var(--deep)}
+.login-masthead .brand img{width:106px}
+.login article{min-width:0;padding:var(--login-inset)}
+.login h1{font-size:1.65rem;line-height:1.2;margin:0 0 .8rem}
+.login form{display:grid;gap:.7rem}
+.login .field input{min-height:44px;font-size:1rem}
 .login .button{width:100%}
-@media(min-width:620px){
-  .login-shell{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr)}
-  .login-masthead{padding:1.65rem}
-}
+.login form .button,.login article > .button{margin-top:.25rem}
+.login-help{margin:.85rem 0 0;padding-top:.7rem;border-top:1px solid var(--line)}
+.login-feedback{margin:0 0 .8rem;padding:.55rem .65rem;border:1px solid #e5bcb8;border-radius:8px;background:#fdf1ef;color:#862c25;font-size:.85rem;overflow-wrap:anywhere}
 @media(max-height:550px){
   .sidebar,.page-top{position:static}
 }

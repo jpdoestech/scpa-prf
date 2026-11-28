@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { canDecide, skippedApproval } from './model.js';
+import { canDecide, canEditRequest, skippedApproval } from './model.js';
 
 export const config = __PUBLIC_CONFIG__;
 export const supabase = config.demo ? null : createClient(config.url, config.key);
@@ -282,9 +282,9 @@ export async function submit({ id, form, version }) {
   }));
   let row = demoRows.find(r => r.id === id);
   const at = new Date().toISOString();
-  const action = row ? 'resubmitted' : 'submitted';
+  const action = row ? (row.status === 'returned' ? 'resubmitted' : 'edited') : 'submitted';
   if (!row && !['employee', 'coordinator'].includes(demoRole)) throw new Error('Switch to Officer/Agent or Coordinator to submit a sample request.');
-  if (row && (!mine(row) || row.version !== version || row.status !== 'returned')) {
+  if (row && (!canEditRequest(row, demoPeople[demoRole].id) || row.version !== version)) {
     throw new Error('This request has changed. Refresh it before submitting.');
   }
   const { branch, officer_id: officerId, ...details } = form;

@@ -56,6 +56,9 @@ export const skippedApproval = (r, id) => {
   if (hasApprover(r, 'hrd', id) && r.status === 'supervisor') return 'Supervisor';
   return '';
 };
+export const canEditRequest = (r, requesterId) => r.requester_id === requesterId &&
+  (r.status === 'returned' || (['officer', 'supervisor'].includes(r.status) && !r.supervisor_at && !r.hrd_at));
+
 export const nextActor = r => ({
   officer: r.officer_name,
   supervisor: r.supervisor_ids?.length > 1 ? `one of ${r.supervisor_ids.length} assigned supervisors` : r.supervisor_name,
@@ -64,6 +67,7 @@ export const nextActor = r => ({
 })[r.status] ?? '';
 export const eventTitle = e => {
   if (e.action === 'submitted') return 'Request submitted';
+  if (e.action === 'edited') return 'Request edited';
   if (e.action === 'resubmitted') return 'Request resubmitted';
   if (e.stage === 'officer' && e.action === 'auto_approved') return 'Officer/Agent step auto-approved';
   if (e.action === 'approval_override') return e.stage === 'hrd'
