@@ -4,6 +4,8 @@ const logo = './assets/scpa-logo.png';
 const originalTemplate = './assets/scpa-prf-template.png';
 const svgNS = 'http://www.w3.org/2000/svg';
 const formWidth = 552;
+const leftColumn = { x: 2, width: 225 };
+const rightColumn = { x: 243, width: 307 };
 const printInset = 14;
 const pxPerMm = 96 / 25.4;
 const noticeColor = '#781b24';
@@ -91,15 +93,18 @@ function formSection(context, name, draw, family = sans) {
     text(label, x, y, 9, 'bold');
     context.font = '10.5px ' + family;
     for (const line of wrapText(context, value, width - 2)) {
-      y += 13;
+      y += 12;
       text(line, x, y, 10.5);
       rule(x, y + 3, width);
     }
-    return y + 13;
+    return y + 12;
   }
   function fields(y, left, right) {
     if (!right) return field(...left, 2, y, formWidth - 4);
-    return Math.max(field(...left, 2, y, 265), field(...right, 285, y, 265));
+    return Math.max(
+      field(...left, leftColumn.x, y, leftColumn.width),
+      field(...right, rightColumn.x, y, rightColumn.width),
+    );
   }
   function choices(label, options, value, x, y) {
     text(label, x, y, 11, 'bold');
@@ -229,7 +234,6 @@ async function wrappedForm(row) {
   const picture = await embeddedImage(logo);
   const context = document.createElement('canvas').getContext('2d');
   const section = (name, draw) => formSection(context, name, draw, serif);
-  let stamp;
   const sections = [
     section('SCPA Personnel Requisition Form', ({ add, text, rule, fields }) => {
       add('image', { href: picture, x: 2, y: 0, width: 84, height: 25, preserveAspectRatio: 'xMinYMid meet' });
@@ -246,16 +250,17 @@ async function wrappedForm(row) {
       return fields(y, ['Assigned area / store', f.area], ['No. of personnel requested', f.headcount]);
     }),
     section('Service time frame and work assignment', ({ add, choices, field }) => {
-      let serviceY = choices('Service time frame', services, f.service, 2, 11);
-      let assignmentY = choices('Work assignment', assignments, f.assignment, 285, 11);
-      if (f.service_other) serviceY = field('Specify service time frame', f.service_other, 2, serviceY, 265);
-      if (f.assignment_description) assignmentY = field('Brief description', f.assignment_description, 285, assignmentY, 265);
-      serviceY = choices('Requisition type', requisitions, f.requisition, 2, serviceY + 6);
+      const left = leftColumn;
+      const right = rightColumn;
+      let serviceY = choices('Service time frame', services, f.service, left.x, 11);
+      let assignmentY = choices('Work assignment', assignments, f.assignment, right.x, 11);
+      if (f.service_other) serviceY = field('Specify service time frame', f.service_other, left.x, serviceY, left.width);
+      if (f.assignment_description) assignmentY = field('Brief description', f.assignment_description, right.x, assignmentY, right.width);
+      serviceY = choices('Requisition type', requisitions, f.requisition, left.x, serviceY + 6);
       if (f.assignment_remarks) {
-        add('path', { d: 'M285 ' + (assignmentY - 8) + 'v7h9m-3-3 3 3-3 3', fill: 'none', stroke: '#444', 'stroke-width': 1.2 });
-        assignmentY = field('Detailed work assignment', f.assignment_remarks, 302, assignmentY, 248);
-        stamp = { node: add('g', { 'data-print-stamp': '' }), x: 302, y: assignmentY, width: 248 };
-        assignmentY += 10;
+        const indent = 15;
+        add('path', { d: `M${right.x} ${assignmentY - 8}v7h9m-3-3 3 3-3 3`, fill: 'none', stroke: '#444', 'stroke-width': 1.2 });
+        assignmentY = field('Detailed work assignment', f.assignment_remarks, right.x + indent, assignmentY, right.width - indent);
       }
       return Math.max(serviceY, assignmentY);
     }),
@@ -268,18 +273,19 @@ async function wrappedForm(row) {
   sections.push(section('Approval', ({ add, text, fields }) => {
     add('rect', { x: 0, y: 0, width: formWidth, height: 18, fill: '#656565' });
     text('APPROVAL', 7, 13, 11, 'bold', '#fff');
-    text('Approvers confirm that the request accurately represents the position.', 75, 13, 10, 'normal', '#fff');
-    let y = fields(31, ['Supervisor', row.supervisor_at ? row.supervisor_name : ''], ['Date', approvalTime(row.supervisor_at)]);
+    text('Approvers confirm that the request accurately represents the position.', 2, 30);
+    let y = fields(43, ['Supervisor', row.supervisor_at ? row.supervisor_name : ''], ['Date', approvalTime(row.supervisor_at)]);
     y = fields(y, ['Authorized HRD officer', row.hrd_at ? row.hrd_name : ''], ['Date', approvalTime(row.hrd_at)]);
     return y;
   }));
-  return { sections, stamp, otherDetails: f.qualifications ? [['Qualifications', f.qualifications]] : [] };
+  return { sections, otherDetails: f.qualifications ? [['Qualifications', f.qualifications]] : [] };
 }
 
-function postApprovalSections(otherDetails, assignment, events, placedStamp, family) {
+function postApprovalSections(otherDetails, assignment, events, wrapped) {
   const context = document.createElement('canvas').getContext('2d');
+  const family = wrapped ? serif : sans;
   context.font = '10px ' + family;
-  const split = Boolean(assignment && !placedStamp);
+  const split = Boolean(assignment && !wrapped);
   const divider = formWidth * .7;
   const left = { x: 2, end: split ? divider - 8 : formWidth - 2, entries: [], start: 0 };
   const right = { x: divider + 8, end: formWidth - 2, entries: [], start: 0 };
@@ -298,8 +304,18 @@ function postApprovalSections(otherDetails, assignment, events, placedStamp, fam
   heading('Request timeline');
   for (const event of events) {
     const note = event.note?.trim();
-    left.entries.push({ line: eventTitle(event), heading: true, timeline: true, marker: true });
-    detail(approvalTime(event.occurred_at) + ' PHT · ' + event.actor_name, true);
+    const entry = { line: eventTitle(event), heading: true, timeline: true, marker: true };
+    const metadata = approvalTime(event.occurred_at) + ' PHT · ' + event.actor_name;
+    if (wrapped) {
+      context.font = '9.5px ' + family;
+      const metadataX = left.end - context.measureText(metadata).width;
+      context.font = 'bold 10px ' + family;
+      const titleEnd = left.x + 12 + context.measureText(entry.line).width;
+      if (metadataX >= titleEnd + 12) Object.assign(entry, { metadata, metadataX });
+      context.font = '10px ' + family;
+    }
+    left.entries.push(entry);
+    if (!entry.metadata) detail(metadata, true);
     if (note) detail(note, true);
     for (const { label, from, to } of correctionHistory(event)) {
       detail(label + '\nFrom  ' + from + '\nTo  ' + to, true);
@@ -310,8 +326,8 @@ function postApprovalSections(otherDetails, assignment, events, placedStamp, fam
     right.entries.push({ line: 'Detailed work assignment', heading: true });
     detail(assignment, false, right);
   }
-  const stamp = placedStamp ?? {};
-  if (!placedStamp) (split ? right : left).entries.push({ stamp: true });
+  const stamp = {};
+  if (!wrapped) (split ? right : left).entries.push({ stamp: true });
   const sections = [];
   const pageRows = 22;
   while (columns.some(column => column.start < column.entries.length)) {
@@ -341,6 +357,7 @@ function postApprovalSections(otherDetails, assignment, events, placedStamp, fam
           if (marker) add('circle', { cx: x + 3, cy: y - 3, r: 2.4, fill: '#235544' });
           text(line, x + (timeline ? 12 : 0), y, timeline && !bold ? 9.5 : 10,
             bold ? 'bold' : 'normal', timeline && !bold ? '#444' : '#111');
+          if (entry.metadata) text(entry.metadata, entry.metadataX, y, 9.5, 'normal', '#444');
         }
       }
       return height;
@@ -400,8 +417,8 @@ export async function preparePrint(row, paper, events, template = 'original') {
   const wrapped = template === 'wrapped';
   const family = wrapped ? serif : sans;
   const fontCss = wrapped ? await loadSerifFonts() : '';
-  const { sections, otherDetails, stamp } = await (wrapped ? wrappedForm(row) : originalForm(row));
-  const details = postApprovalSections(otherDetails, row.form.assignment_remarks, events, stamp, family);
+  const { sections, otherDetails } = await (wrapped ? wrappedForm(row) : originalForm(row));
+  const details = postApprovalSections(otherDetails, row.form.assignment_remarks, events, wrapped);
   sections.push(...details.sections);
   for (const section of sections) section.fontCss = fontCss;
   document.getElementById('print-preview').style.setProperty('--paper-width', paperWidth + 'mm');
@@ -420,18 +437,32 @@ export async function preparePrint(row, paper, events, template = 'original') {
   footer.className = 'print-footer';
   footer.style.fontFamily = family;
   footer.textContent = noticeText;
+  if (wrapped) {
+    details.stamp.node = document.createElement('span');
+    details.stamp.node.className = 'print-footer-stamp';
+    details.stamp.footer = true;
+    footer.append(details.stamp.node);
+  }
 
   const prepared = { sections, stamp: details.stamp, paperWidth, paperHeight, family };
   stampPrint(prepared, 'Prepared for print');
   return { ...prepared, ...paginatePrint(sections, footer, paperWidth, paperHeight) };
 }
 
+function printStampText(action) {
+  return action + ' · ' + approvalTime(new Date()) + ' PHT';
+}
+
 function stampLines(context, action, width, family, scale = 1) {
   context.font = 9 * scale + 'px ' + family;
-  return wrapText(context, action + ' · ' + approvalTime(new Date()) + ' PHT', width * scale);
+  return wrapText(context, printStampText(action), width * scale);
 }
 
 export function stampPrint({ stamp, family }, action = 'Printed') {
+  if (stamp.footer) {
+    stamp.node.textContent = printStampText(action);
+    return;
+  }
   const context = document.createElement('canvas').getContext('2d');
   stamp.node.replaceChildren(...stampLines(context, action, stamp.width, family).map((line, index) => {
     const node = svgNode('text', { x: stamp.x, y: stamp.y + index * 11, 'font-family': family, 'font-size': 9, fill: '#444' });
@@ -472,7 +503,7 @@ export function drawPrintImage({ sections, stamp, paperWidth, paperHeight, famil
   const contentEnd = inset + indices.reduce((sum, index) => sum + sections[index].height * sectionScale, 0);
   context.font = '12px ' + family;
   const footerLines = includeFooter ? wrapText(context, noticeText, contentWidth) : [];
-  const footerHeight = includeFooter ? 8 + footerLines.length * 16 : 0;
+  const footerHeight = includeFooter ? 8 + footerLines.length * 16 + (stamp.footer ? 18 : 0) : 0;
   const imageHeight = Math.max(paperHeight * pxPerMm, contentEnd + footerHeight + inset);
   const scale = Math.min(2.5, Math.sqrt(12_000_000 / (pageWidth * imageHeight)), 8192 / imageHeight);
   canvas.width = Math.round(pageWidth * scale);
@@ -507,5 +538,10 @@ export function drawPrintImage({ sections, stamp, paperWidth, paperHeight, famil
   context.font = '12px ' + family;
   context.textBaseline = 'top';
   for (const [row, line] of footerLines.entries()) context.fillText(line, inset, footerTop + 8 + row * 16);
+  if (stamp.footer) {
+    context.fillStyle = '#444';
+    context.font = '10.67px ' + family;
+    context.fillText(printStampText(action), inset, footerTop + 12 + footerLines.length * 16);
+  }
   return canvas;
 }

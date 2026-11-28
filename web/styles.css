@@ -339,6 +339,7 @@ textarea{resize:vertical}
 .print-sheet>svg,.print-measure>svg{display:block;width:100%;height:auto;margin-inline:auto}
 .print-measure{position:absolute;left:-200vw;top:0;visibility:hidden;pointer-events:none}
 .print-footer{flex:none;margin-top:auto;padding-top:2mm;border-top:1px solid #caa6ab;color:#781b24;font-family:Arial,sans-serif;font-size:9pt;line-height:1.35;overflow-wrap:anywhere}
+.print-footer-stamp{display:block;margin-top:1mm;color:#444;font-size:8pt}
 @media(pointer:fine){.print-phone-help{display:none}}
 .scroll-top{position:fixed;z-index:3;inset-inline-end:max(1rem,env(safe-area-inset-right));bottom:1rem;width:46px;height:46px;padding:0;border-radius:50%;border-color:#9cb7a9;color:var(--deep);background:rgba(248,253,250,.78);backdrop-filter:blur(8px);box-shadow:0 3px 12px #173c2a1a}
 .scroll-top:hover{background:#e4f1e9}
