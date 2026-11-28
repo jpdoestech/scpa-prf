@@ -5,7 +5,8 @@ export const config = __PUBLIC_CONFIG__;
 export const supabase = config.demo ? null : createClient(config.url, config.key);
 export const pageSize = 10;
 const demoPeople = {
-  employee: { id: 'demo-employee', name: 'Mika Reyes', branch: 'Metro Manila', approver: false },
+  employee: { id: 'demo-employee', name: 'Mika Reyes', branch: 'Metro Manila', approver: true, role: 'employee' },
+  coordinator: { id: 'demo-coordinator', name: 'Jemarie Balunos', branch: 'Metro Manila', approver: false, role: 'coordinator' },
   supervisor: { id: 'demo-supervisor', name: 'Alex Garcia', branch: 'Metro Manila', approver: true, canOverrideApproval: true },
   hrd: { id: 'demo-hrd', name: 'Jamie Santos', branch: 'Main Office', approver: true, canOverrideApproval: true },
 };
@@ -145,7 +146,7 @@ export async function requestOptions() {
   try { Object.assign(demoOptions, JSON.parse(localStorage.getItem(demoOptionsKey))); } catch {
     // The demo remains usable without browser storage.
   }
-  return demoOptions;
+  return { ...demoOptions, officers: [{ id: demoPeople.employee.id, name: demoPeople.employee.name, branches: ['Metro Manila'] }] };
 }
 
 export async function optionDirectory(kind) {
@@ -192,13 +193,14 @@ export async function saveEmployeeBranches(id, branches) {
 }
 
 function approvalScope(query, id, view) {
+  const officer = `officer_id.eq.${id}`;
   const supervisor = `supervisor_ids.cs.{${id}}`;
   const hrd = `hrd_ids.cs.{${id}}`;
   if (view === 'override') return query.neq('requester_id', id).or(
     `and(status.in.(supervisor,hrd),${supervisor}),and(status.eq.supervisor,${hrd})`);
   return query.or(view === 'assigned'
-    ? `${supervisor},${hrd}`
-    : `and(status.eq.supervisor,${supervisor}),and(status.eq.hrd,${hrd})`);
+    ? `${officer},${supervisor},${hrd}`
+    : `and(status.eq.officer,${officer}),and(status.eq.supervisor,${supervisor}),and(status.eq.hrd,${hrd})`);
 }
 
 export async function pendingApprovals(id) {
@@ -212,11 +214,11 @@ export async function dashboard({ mode, id, status, search, page, rowsPerPage = 
   const filters = ['', 'active', 'approved', 'closed'];
   if (config.demo) {
     const demoId = demoPeople[demoRole].id;
-    const assigned = r => [r.supervisor_id, r.hrd_id].includes(demoId);
+    const assigned = r => [r.officer_id, r.supervisor_id, r.hrd_id].includes(demoId);
     const override = r => demoPeople[demoRole].canOverrideApproval && skippedApproval(r, demoId);
     const candidates = demoRows.filter(mode === 'inbox' ? ({ assigned, override }[status] ?? queue) : mine);
     const matches = (r, s) => !s || ['assigned', 'override'].includes(s) || r.status === s ||
-      (s === 'active' && ['supervisor', 'hrd'].includes(r.status)) ||
+      (s === 'active' && ['officer', 'supervisor', 'hrd'].includes(r.status)) ||
       (s === 'closed' && ['returned', 'disapproved'].includes(r.status));
     const visible = candidates.filter(r => matches(r, status) && (mode !== 'inbox' || !inboxStatus || r.status === inboxStatus) &&
       [r.number, r.form.position, r.form.area, r.requester_name].join(' ').toLowerCase().includes(search.toLowerCase()))
@@ -235,7 +237,7 @@ export async function dashboard({ mode, id, status, search, page, rowsPerPage = 
     q = mode === 'inbox'
       ? approvalScope(q, id, s)
       : q.eq('requester_id', id);
-    if (s === 'active') q = q.in('status', ['supervisor', 'hrd']);
+    if (s === 'active') q = q.in('status', ['officer', 'supervisor', 'hrd']);
     else if (s === 'closed') q = q.in('status', ['returned', 'disapproved']);
     else if (s && !['assigned', 'override'].includes(s)) q = q.eq('status', s);
     if (mode === 'inbox' && inboxStatus) q = q.eq('status', inboxStatus);
@@ -257,7 +259,7 @@ export async function dashboard({ mode, id, status, search, page, rowsPerPage = 
 export async function record(id) {
   if (config.demo) {
     const row = demoRows.find(r => r.id === id);
-    if (!row || ![row.requester_id, row.supervisor_id, row.hrd_id].includes(demoPeople[demoRole].id)) {
+    if (!row || ![row.requester_id, row.officer_id, row.supervisor_id, row.hrd_id].includes(demoPeople[demoRole].id)) {
       throw new Error('Request unavailable.');
     }
     return { row, events: row.events };
@@ -281,16 +283,22 @@ export async function submit({ id, form, version }) {
   let row = demoRows.find(r => r.id === id);
   const at = new Date().toISOString();
   const action = row ? 'resubmitted' : 'submitted';
-  if (!row && demoRole !== 'employee') throw new Error('Switch to the employee role to submit a sample request.');
+  if (!row && !['employee', 'coordinator'].includes(demoRole)) throw new Error('Switch to Officer/Agent or Coordinator to submit a sample request.');
   if (row && (!mine(row) || row.version !== version || row.status !== 'returned')) {
     throw new Error('This request has changed. Refresh it before submitting.');
+  }
+  const { branch, officer_id: officerId, ...details } = form;
+  const delegate = row?.officer_id ?? officerId;
+  if (demoRole === 'coordinator' && (delegate !== demoPeople.employee.id || branch !== 'Metro Manila')) {
+    throw new Error('Choose an assigned Officer/Agent for this branch.');
   }
   if (!row) {
     row = { ...demoNames, id, number: null,
       submitted_at: at, version: 0, events: [] };
+    if (delegate) Object.assign(row, { requester_id: demoPeople.coordinator.id, officer_id: delegate,
+      officer_name: demoPeople.employee.name, requester_name: `${demoPeople.coordinator.name} (${demoPeople.employee.name})` });
     demoRows.unshift(row);
   }
-  const { branch, ...details } = form;
   const changes = {};
   if (action === 'resubmitted') {
     const before = { ...row.form, branch_name: row.branch_name };
@@ -302,7 +310,8 @@ export async function submit({ id, form, version }) {
     }
   }
   if (branch) row.branch_name = branch;
-  Object.assign(row, { form: details, status: 'supervisor', version: row.version + 1, updated_at: at, supervisor_at: null, hrd_at: null });
+  Object.assign(row, { form: details, status: row.officer_id ? 'officer' : 'supervisor',
+    version: row.version + 1, updated_at: at, officer_at: null, supervisor_at: null, hrd_at: null });
   row.events.push({ action, actor_name: demoPeople[demoRole].name, stage: 'requester', occurred_at: at, changes });
   saveDemo();
   return row;
@@ -320,8 +329,8 @@ export async function decide({ id, version, decision, note }) {
   const stage = override ? demoRole : row.status;
   const at = new Date().toISOString();
   if (decision === 'approve' || override) {
-    row[stage === 'supervisor' ? 'supervisor_at' : 'hrd_at'] ??= at;
-    row.status = stage === 'supervisor' && !override ? 'hrd' : 'approved';
+    row[`${stage}_at`] ??= at;
+    row.status = override ? 'approved' : { officer: 'supervisor', supervisor: 'hrd', hrd: 'approved' }[stage];
     if (row.status === 'approved' && row.number === null) {
       const year = new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: 'Asia/Manila' }).format(new Date(at));
       const last = Math.max(24, ...demoRows.map(item => Number(item.number?.split('-').at(-1)) || 0));

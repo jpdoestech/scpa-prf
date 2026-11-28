@@ -192,8 +192,8 @@ function markBusy(value) {
 function renderLogin(message = '', error = false, inactive = false) {
   app.setAttribute('aria-busy', 'false');
   app.innerHTML = `<div class="login"><div class="login-shell"><div class="login-masthead">${logo}</div><article>
-    <h1>${inactive ? 'Employee access required' : 'Sign in'}</h1>
-    <p class="muted">${inactive ? 'Ask your PRF administrator to activate your employee profile.' : 'Sign in with the email and password for your PRF account.'}</p>
+    <h1>${inactive ? 'Staff access required' : 'Sign in'}</h1>
+    <p class="muted">${inactive ? 'Ask your PRF administrator to activate your staff profile.' : 'Sign in with the email and password for your PRF account.'}</p>
     ${inactive ? button('signout', 'Sign out', 'secondary', 'exit', 'style="margin-top:1rem"') :
       `<form id="login-form">
         <label class="field">Email<input type="email" name="email" autocomplete="username" required></label>
@@ -219,7 +219,7 @@ function renderFrame(content) {
     ${person.approver || person.superAdmin ? '<span id="pending-approval-summary" class="sr-only" role="status"></span>' : ''}
     <header class="page-top"><div class="account">
       ${config.demo ? `<span class="demo-tag">Demo</span><select id="demo-role" aria-label="Demo role">
-        ${Object.entries({ employee: 'Employee', supervisor: 'Supervisor', hrd: 'HRD' })
+        ${Object.entries({ employee: 'Officer/Agent', coordinator: 'Coordinator', supervisor: 'Supervisor', hrd: 'HRD' })
           .map(([key, label]) => `<option value="${key}" ${key === currentDemoRole() ? 'selected' : ''}>${label}</option>`).join('')}
       </select>` : `<button class="button secondary profile-button" type="button" data-action="profile" aria-label="My account"
         ${screen === 'profile' ? 'aria-current="page"' : ''} title="My account">
@@ -422,7 +422,7 @@ let adminSearch = '';
 let adminLauncher = '';
 let adminDirty = false;
 let prfRecordReview;
-const roleLabels = { employee: 'Employee', supervisor: 'Supervisor', hrd: 'HRD approver', other: 'Other staff' };
+const roleLabels = { employee: 'Officer/Agent', coordinator: 'Coordinator', supervisor: 'Supervisor', hrd: 'HRD approver', other: 'Other staff' };
 
 function renderUserRows(term = '') {
   const matches = managedAccounts.filter(account =>
@@ -479,6 +479,8 @@ function renderAccountForm(account, approvers, branches, branchField) {
   const current = account ?? {};
   const assigned = current.branch_ids ?? (current[branchField] ? [current[branchField]] : []);
   const selected = (key, value) => current[key] === value ? 'selected' : '';
+  const officerIds = current.officer_ids ?? [];
+  const officers = managedAccounts.filter(p => p.id !== current.id && p.role === 'employee' && (p.active || officerIds.includes(p.id)));
   const approver = (label, role) => {
     const name = `${role}_ids`;
     const previous = current[name] ?? (current[`${role}_id`] ? [current[`${role}_id`]] : []);
@@ -510,9 +512,19 @@ function renderAccountForm(account, approvers, branches, branchField) {
             <input type="checkbox" name="can_override_approval" ${current.can_override_approval ? 'checked' : ''}>
             <span><strong>Allow approval override</strong><small>Can skip the other approval step on assigned PRFs. A reason is required.</small></span>
           </label>
-          ${approver('Assigned supervisors', 'supervisor')}
-          ${approver('Assigned HRD approvers', 'hrd')}
-          <p class="muted small wide">One assigned approver per stage can act within the request’s branch.</p>
+          <div class="field-grid wide" data-approval-rosters ${current.role === 'coordinator' ? 'hidden' : ''}>
+            ${approver('Assigned supervisors', 'supervisor')}
+            ${approver('Assigned HRD approvers', 'hrd')}
+            <p class="muted small wide">One assigned approver per stage can act within the request’s branch.</p>
+          </div>
+          <div class="field-grid wide" data-coordinator-profile ${current.role === 'coordinator' ? '' : 'hidden'}>
+            ${assignmentChecklist('officer_ids', 'Assigned Officer/Agent accounts', officers, officerIds, 'wide')}
+            <p class="muted small wide" data-no-officers hidden>No active Officer/Agent accounts share the selected branches.</p>
+            ${field('officer-approval', 'Officer/Agent approval', `<select name="require_officer_approval">
+              <option value="true">Require Officer/Agent approval</option>
+              <option value="false" ${current.require_officer_approval === false ? 'selected' : ''}>Auto-approve the Officer/Agent step</option>
+            </select><small>Requests use the selected Officer/Agent’s Supervisor and HRD approvers.</small>`, 'wide')}
+          </div>
           ${creating ? password('Initial password') : ''}
         </div><div class="actions">${creating ? submitButton('Create account', 'plus') : submitButton('Save changes', 'check')}</div>
       </form></section>
@@ -521,6 +533,22 @@ function renderAccountForm(account, approvers, branches, branchField) {
           ${button('delete-user', 'Delete account', 'danger', 'close', `data-id="${escape(account.id)}" aria-haspopup="dialog"`)}</div>
       </section>`}
     </div>`;
+}
+
+function updateCoordinatorProfile(form) {
+  const isCoordinator = form.elements.role.value === 'coordinator';
+  const panel = form.querySelector('[data-coordinator-profile]');
+  panel.hidden = !isCoordinator;
+  form.querySelector('[data-approval-rosters]').hidden = isCoordinator;
+  if (!isCoordinator) return;
+  const branchIds = new Set(new FormData(form).getAll('branch_ids'));
+  for (const branch of adminDirectory?.branches ?? []) if (branch.active === false) branchIds.delete(branch.id);
+  const eligible = new Set(managedAccounts.filter(account => account.active && account.role === 'employee' &&
+    account.branch_ids?.some(id => branchIds.has(id))).map(account => account.id));
+  for (const input of panel.querySelectorAll('input[name="officer_ids"]')) {
+    input.closest('label').hidden = !input.checked && !eligible.has(input.value);
+  }
+  panel.querySelector('[data-no-officers]').hidden = eligible.size > 0;
 }
 
 function renderBranchForm() {
@@ -567,6 +595,7 @@ async function openAdmin(view = '', message = '') {
       renderFrame(renderBranchForm());
     } else if (view === 'new' || account) {
       renderFrame(renderAccountForm(account, approvers, branches, hasBranchDirectory ? 'branch_id' : 'branch'));
+      updateCoordinatorProfile(document.getElementById('admin-form'));
     } else {
       renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
         <div class="actions">${person.superAdmin && hasBranchDirectory ? button('new-branch', 'Add branch', 'secondary', 'plus') : ''}
@@ -734,9 +763,10 @@ function optionNameField(kind) {
   return field('new-option-name', optionKinds[kind], '<input name="name" maxlength="100" autocomplete="off" required autofocus pattern=".*\\S.*">');
 }
 
-function requestOptionFields(options, values = {}) {
+function requestOptionFields(options, values, officerField) {
   return [
     requestOptionField('branch', 'Branch', person.superAdmin ? 'Add branch' : '', options.branch, values.branch),
+    officerField,
     requestOptionField('position', 'Position title', 'Add position title', options.position, values.position),
     requestOptionField('area', 'Assigned area / store', 'Add assigned area', options.area, values.area),
   ].join('');
@@ -755,13 +785,19 @@ function formView(options) {
   const shortText = (name, label) => /[\r\n]/.test(values[name] ?? '')
     ? textarea(name, label, 650, 1)
     : input(name, label, 'text', 'maxlength="650"', 'wide');
+  const delegate = !edit && person.role === 'coordinator';
+  const officerField = delegate ? field('request-officer', 'Request on behalf of', `<select name="officer_id" data-search-select required>
+    <option value="">Choose an Officer/Agent</option>${(options.officers ?? []).map(officer =>
+      `<option value="${escape(officer.id)}" data-branches="${escape(JSON.stringify(officer.branches ?? []))}">${escape(officer.name)}</option>`).join('')}
+    </select><small id="officer-availability" hidden>No assigned Officer/Agent covers this branch.</small>`)
+    : edit?.officer_name ? `<div class="field"><strong>Request on behalf of</strong><p>${escape(edit.officer_name)}</p></div>` : '';
 
   renderFrame(`${backButton('back', 'Back to requests')}
     <div class="heading"><div><h1 tabindex="-1">${edit ? 'Revise request' : 'New request'}</h1>
       <p>${escape(person.name)}</p></div></div>
     <form id="request-form" class="sheet">
       <section class="panel form-section"><h2>Personnel needed</h2><div class="field-grid">
-        ${requestOptionFields(options, { ...values, branch: edit?.branch_name ?? person.branch })}
+        ${requestOptionFields(options, { ...values, branch: edit?.branch_name ?? person.branch }, officerField)}
         ${input('headcount', 'Number of personnel', 'text', 'inputmode="numeric" pattern="[1-9][0-9]{0,3}" title="Enter a whole number from 1 to 9,999." required')}
         ${input('needed', 'Date needed from', 'date', 'required')}
         ${input('needed_to', 'Date needed to', 'date', `min="${val('needed')}" required`)}
@@ -781,12 +817,28 @@ function formView(options) {
         ${input('salary', 'Proposed monthly / daily salary (optional)', 'text', 'maxlength="36" placeholder="e.g., ₱18,000 / month"')}
         ${input('allowance', 'Allowance (optional)', 'text', 'maxlength="40"')}
       </div></section>
-      <div class="actions">${submitButton(edit ? 'Resubmit to supervisor' : 'Submit to supervisor', 'send')}
+      <div class="actions">${submitButton(delegate || edit?.officer_id ? (edit ? 'Resubmit request' : 'Submit request')
+        : (edit ? 'Resubmit to supervisor' : 'Submit to supervisor'), 'send')}
       ${button('back', 'Cancel', 'secondary', 'close')}</div>
     </form>`);
   conditionalFields();
+  updateOfficerChoices(document.getElementById('request-form'));
   window.scrollTo(0, 0);
   app.querySelector('h1').focus({ preventScroll: true });
+}
+
+function updateOfficerChoices(form) {
+  const select = form.elements.officer_id;
+  if (!select) return;
+  let available = false;
+  for (const option of select.options) {
+    if (!option.value) continue;
+    option.hidden = option.disabled = !JSON.parse(option.dataset.branches).includes(form.elements.branch.value);
+    if (!option.hidden) available = true;
+  }
+  if (select.selectedOptions[0]?.disabled) select.value = '';
+  select.dispatchEvent(new Event('change'));
+  form.querySelector('#officer-availability').hidden = available || !form.elements.branch.value;
 }
 
 function conditionalFields() {
@@ -842,6 +894,7 @@ function detailView() {
         ${fieldEntry('Requisition type', requisitions[f.requisition])}${fieldEntry('Work schedule', f.schedule)}
         ${fieldEntry('Requisition details', f.reason, true)}${fieldEntry('Qualifications', f.qualifications, true)}
         ${fieldEntry('Proposed salary', f.salary)}${fieldEntry('Allowance', f.allowance)}
+        ${fieldEntry(r.officer_approval_required ? 'Officer/Agent approved' : 'Officer/Agent step auto-approved', approvalTime(r.officer_at))}
         ${fieldEntry('Supervisor approved', approvalTime(r.supervisor_at))}
         ${fieldEntry('HRD approved', approvalTime(r.hrd_at))}
       </dl></section>
@@ -1123,6 +1176,7 @@ app.addEventListener('change', async e => {
   if (checklist) {
     const count = checklist.querySelectorAll('input:checked').length;
     checklist.parentElement.querySelector('[data-assignment-count]').textContent = `${count} selected`;
+    if (target.form?.id === 'admin-form' && ['branch_ids', 'officer_ids'].includes(target.name)) updateCoordinatorProfile(target.form);
   } else if (target.form?.id === 'prf-record-filter' && target.name === 'period') {
     document.getElementById('prf-period-field').innerHTML = prfPeriodField(target.value);
   } else if (target.name === 'prf-record') {
@@ -1164,8 +1218,11 @@ app.addEventListener('change', async e => {
     conditionalFields();
   } else if (target.name === 'needed' && target.form?.id === 'request-form') {
     target.form.elements.needed_to.min = target.value;
+  } else if (target.name === 'branch' && target.form?.id === 'request-form') {
+    updateOfficerChoices(target.form);
   } else if (target.name === 'role' && target.form?.id === 'admin-form') {
     target.form.querySelector('.approval-override-control').hidden = !['supervisor', 'hrd'].includes(target.value);
+    updateCoordinatorProfile(target.form);
   } else if (target.name === 'decision') {
     target.form.elements.note.required = Boolean(target.value && target.value !== 'approve');
     document.getElementById('decision-help').textContent = target.value === 'override'
@@ -1575,13 +1632,17 @@ app.addEventListener('submit', async event => {
       await saveEmployeeBranches(form.dataset.id, formData.getAll('branch_ids'));
       adminDirectory = null;
       adminDirty = false;
-      await openAdmin('', 'Employee branches saved.');
+      await openAdmin('', 'Officer/Agent branches saved.');
     } else if (['admin-form', 'admin-form-reset'].includes(form.id) && person?.superAdmin) {
       if (form.id === 'admin-form') {
         values.branch_ids = formData.getAll('branch_ids');
         if (!values.branch_ids.length) throw new Error('Choose at least one branch.');
-        values.supervisor_ids = formData.getAll('supervisor_ids');
-        values.hrd_ids = formData.getAll('hrd_ids');
+        const coordinator = values.role === 'coordinator';
+        values.supervisor_ids = coordinator ? [] : formData.getAll('supervisor_ids');
+        values.hrd_ids = coordinator ? [] : formData.getAll('hrd_ids');
+        values.officer_ids = coordinator ? formData.getAll('officer_ids') : [];
+        values.require_officer_approval = form.elements.require_officer_approval.value === 'true';
+        if (coordinator && !values.officer_ids.length) throw new Error('Assign at least one Officer/Agent.');
         values.can_override_approval = ['supervisor', 'hrd'].includes(values.role) && form.elements.can_override_approval.checked;
       }
       const account = await adminAccounts(values);
@@ -1599,7 +1660,8 @@ app.addEventListener('submit', async event => {
       else await openAdmin(values.account_id, 'PRF profile saved.');
     } else if (form.id === 'request-form') {
       const row = await submit({ id: pendingId, form: values, version: edit?.version });
-      await openRecord(row.id, screenOrigin, edit ? 'Request resubmitted to the supervisor.' : 'Request submitted to the supervisor.');
+      const recipient = row.status === 'officer' ? 'the Officer/Agent' : 'the supervisor';
+      await openRecord(row.id, screenOrigin, `Request ${edit ? 'resubmitted' : 'submitted'} to ${recipient}.`);
     } else if (form.id === 'decision-form') {
       const request = detail.row;
       const save = () => decide({ id: request.id, version: request.version, decision: values.decision, note: values.note });

@@ -6,11 +6,13 @@
 
 1. Keep **Allow new users to sign up** off and **Email** enabled. Use the Vercel URL as the Site URL. [Sign-in providers](https://supabase.com/dashboard/project/crstiwhylwumglbjxwbo/auth/providers) · [URL configuration](https://supabase.com/dashboard/project/crstiwhylwumglbjxwbo/auth/url-configuration)
 2. Sign in as the PRF super administrator. Use **Users → Add branch** to add locations to the shared branch list. Open **Users → New user** to create the supervisor and HRD accounts first. Enter each user's verified email, name, role, and a unique initial password. Select their existing location from **Assigned branch**. Give each user their password privately. [Live app](https://scpa-prf.vercel.app/)
-3. Create the employee and select their supervisor and HRD approver. The app creates the Auth account and active PRF profile together. Other staff can have both approvers assigned at creation if they will submit requests.
+3. Create or manage **Officer/Agent** accounts and select their Supervisor and HRD approvers. Existing Employee accounts appear as Officer/Agent accounts and keep their sign-in, branches, and request history.
 4. In **Users → Manage**, edit a user's PRF role, branch, assigned approvers, or access status. An inactive profile blocks PRF access and preserves the account and request history. An approver with active assignments must be reassigned before deactivation. The super-admin login opens **Users**, **My requests**, and **Approval inbox**. To submit or review requests, use **Set up my profile** to add your staff profile and configure the approval assignments.
 5. HRD verifies password reset requests. The super administrator sets the replacement password in **Users → Manage → Password reset** and gives it privately to the user. Super-admin passwords are reset through the Supabase administrator. [Supabase admin password reset](https://supabase.com/docs/reference/javascript/auth-admin-updateuserbyid)
 
-Employees sign in with email and password. **My requests** shows status, the next approver, and dated comments. Supervisors and HRD check **Approval inbox** for work awaiting them. The pilot requires no email service.
+To set up a **Coordinator**, open **Users → New user** or manage an existing account. Select the Coordinator’s branches and choose one or more accounts under **Assigned Officer/Agent accounts**. For **Officer/Agent approval**, choose **Require Officer/Agent approval** or **Auto-approve the Officer/Agent step**. The setting applies to new requests. Each request keeps its original setting through corrections.
+
+Coordinators select a branch and an assigned Officer/Agent in **New request**. The PRF shows `Coordinator (Officer/Agent)`. The required Officer/Agent step appears in that Officer/Agent’s **Approval inbox**. The request then follows the Officer/Agent’s Supervisor and HRD approval chain. An Officer/Agent submitting their own PRF appears under their own name and starts at Supervisor review.
 
 ## Optional Google Sheets sync
 

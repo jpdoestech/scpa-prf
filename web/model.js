@@ -1,4 +1,5 @@
 export const statuses = {
+  officer: 'Officer/Agent review',
   supervisor: 'Supervisor review',
   hrd: 'HRD review',
   returned: 'Returned',
@@ -48,7 +49,7 @@ export function approvalTime(value, spaceBeforePeriod = false) {
 export const prfNumber = row => row.number ?? 'Not yet issued';
 const hasApprover = (r, stage, id) => r[`${stage}_ids`]?.includes(id) ?? (r[`${stage}_id`] === id);
 export const canDecide = (r, id) =>
-  (r.status === 'supervisor' || r.status === 'hrd') && hasApprover(r, r.status, id);
+  ['officer', 'supervisor', 'hrd'].includes(r.status) && hasApprover(r, r.status, id);
 export const skippedApproval = (r, id) => {
   if (r.requester_id === id) return '';
   if (hasApprover(r, 'supervisor', id) && ['supervisor', 'hrd'].includes(r.status)) return 'HRD';
@@ -56,6 +57,7 @@ export const skippedApproval = (r, id) => {
   return '';
 };
 export const nextActor = r => ({
+  officer: r.officer_name,
   supervisor: r.supervisor_ids?.length > 1 ? `one of ${r.supervisor_ids.length} assigned supervisors` : r.supervisor_name,
   hrd: r.hrd_ids?.length > 1 ? `one of ${r.hrd_ids.length} assigned HRD approvers` : r.hrd_name,
   returned: r.requester_name,
@@ -63,10 +65,12 @@ export const nextActor = r => ({
 export const eventTitle = e => {
   if (e.action === 'submitted') return 'Request submitted';
   if (e.action === 'resubmitted') return 'Request resubmitted';
+  if (e.stage === 'officer' && e.action === 'auto_approved') return 'Officer/Agent step auto-approved';
   if (e.action === 'approval_override') return e.stage === 'hrd'
     ? 'HRD approved with override (Supervisor step skipped)'
     : 'Supervisor approved with override (HRD step skipped)';
-  return `${e.stage === 'hrd' ? 'HRD' : 'Supervisor'} ${e.action === 'returned' ? 'returned for correction' : e.action}`;
+  const stage = { officer: 'Officer/Agent', supervisor: 'Supervisor', hrd: 'HRD' }[e.stage];
+  return `${stage} ${e.action === 'returned' ? 'returned for correction' : e.action}`;
 };
 
 const correctionFields = {

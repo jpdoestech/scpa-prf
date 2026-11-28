@@ -1,10 +1,10 @@
 # SCPA Personnel Requisition System
 
-SCPA employees can submit agency personnel requests from a phone or desktop, see the next approver, and review the dated decision history. Supervisors and HRD officers can review an inbox or see all requests assigned to them. The PRF print button fills one SCPA-branded copy of the supplied form for A4 or Letter.
+SCPA Officer/Agent accounts can submit personnel requests from a phone or desktop. Coordinators can submit on behalf of an assigned Officer/Agent. Requesters can see the next approver and the dated decision history. The PRF print button fills a SCPA-branded copy of the supplied form for A4 or Letter.
 
 ## Try the sample
 
-Open the packaged `Demo.html` in a modern browser. Use **Demo role** to switch between Employee, Supervisor, and HRD. Sample activity stays in that browser. The demo has no production connections.
+Open the packaged `Demo.html` in a modern browser. Use **Demo role** to switch between Officer/Agent, Coordinator, Supervisor, and HRD. Sample activity stays in that browser. The demo has no production connections.
 
 From the source checkout, use Node 22 and run:
 
@@ -21,14 +21,15 @@ Use the shared `data-search-select` control for searchable directories. Choosing
 
 ## Approval and paper defaults
 
-- The super admin assigns branches to supervisors and HRD. In **Users**, supervisors and HRD can change employee branch membership within their own branches. Assignments outside their scope stay in place.
+- The super admin assigns branches to Supervisors, HRD approvers, Officer/Agent accounts, and Coordinators. Supervisors and HRD can update Officer/Agent branch membership within their own branches.
+- The super admin assigns Officer/Agent accounts to each Coordinator and sets whether the Officer/Agent step requires review or is auto-approved. The Coordinator selects an assigned Officer/Agent for the request’s branch. Supervisor and HRD routing follows the selected Officer/Agent’s profile.
 - Super admins can use **Users → Manage account → Delete account** to remove a user’s Supabase sign-in, PRF profile, and avatar. Super-admin accounts and accounts linked to PRF history are protected from this action.
 - **Users → Manage PRF records** lets super admins delete selected PRFs or all matches for a day, month, or year by Manila submission date. Deletion removes the matched PRFs, their history, and queued sync entries. Copies already exported to files or Google Sheets are separate.
 - Super admins use **Users → Print templates** to enable the **Original PRF**, **Wrapped PRF**, or both. The Original PRF is the default. When both are enabled, users choose a layout in **Print/Export PRF** before printing, downloading, or copying.
 - In **Users → Manage account**, open **Assigned branches**, **Assigned supervisors**, or **Assigned HRD approvers** to select multiple entries. A request goes to the assigned approvers eligible for its branch. Any one Supervisor can complete the first stage and any one HRD approver can complete the second. The timeline records who acted. Where a staff assignment has no eligible approver, the app uses the branch default or its sole eligible approver.
-- In **New request**, select the **Branch**, **Position title**, and **Assigned area / store**. Staff with active PRF access can add missing positions and areas. The selected branch describes the request. Approval routing follows the requester's staff profile.
+- In **New request**, select the **Branch**, **Position title**, and **Assigned area / store**. Staff with active PRF access can add missing positions and areas. Approval routing for personal requests follows the requester’s staff profile.
 - Only super admins can manage branches under **Users → Request options**. Super admins, supervisors, and HRD can rename, deactivate, reactivate, or delete position titles and assigned areas under **Request options**. On phones, use the row’s **Actions** button. Confirm changes before saving. Inactive entries are hidden from dropdown choices. Existing requests keep their saved values, and branches with staff or approvers assigned can be deactivated.
-- Returning or disapproving requires a reason. A returned request can be revised and resubmitted. Resubmission restarts supervisor review and keeps the full decision history. A disapproval closes the request. New requests receive their PRF number at final approval. Previously issued numbers stay with their requests. Request lists show the newest submissions first.
+- Returning or disapproving requires a reason. Resubmission restarts at the Officer/Agent step when required and starts at Supervisor review otherwise. The request keeps its decision history. A disapproval closes the request. New requests receive their PRF number at final approval. Request lists show the newest submissions first.
 - Super admins can enable **Allow approval override** per Supervisor or HRD account under **Users**. An enabled approver can use **Eligible for override** in the **Approval inbox** to approve an urgent assigned PRF within their branch scope. An override records the approving role, the skipped step, and the required reason in the timeline.
 - Decisions are recorded in Philippine time in the interface and spreadsheet. The database stores timezone-aware timestamps. The schedule, assignment, and requisition type follow the PRF. Salary, allowance, and qualifications are optional.
 - Select **A4** or **Letter**, then choose **Print/Export PRF** to open the preview. Choose **Print**, **Download PNG**, or **Copy image** in the preview. On Chrome for iPhone, you can use **Share → Print** while the preview is open. For printing, select the same paper size, use 100% scale, and turn off browser headers and footers if shown. The form has a built-in 14 mm inset and includes approval times, the request timeline, the system-generated notice, and a Manila timestamp.
@@ -40,9 +41,9 @@ Use the shared `data-search-select` control for searchable directories. Choosing
 2. Enable email sign-in and disable public sign-ups. The PRF super administrator creates every account with email and password. See the [production setup guide](SUPABASE-SETUP.md).
 3. Adapt `supabase/provision-example.sql` to create branches, enable staff, and configure the routing. Creating a Supabase Auth account and adding an active `staff` row are both required. To remove access, set `staff.active = false`. Existing requests keep their assigned approvers and require a deliberate reassignment if an approver leaves.
 
-Employees follow updates in **My requests**. Supervisors and HRD check **Approval inbox** for requests awaiting a decision. The browser only reads requests and timelines it is allowed to see. PostgreSQL functions validate mutations, enforce stage order, and record a delivery item in the same transaction as the action.
+Requesters follow updates in **My requests**. Officer/Agent accounts with delegated requests, Supervisors, and HRD check **Approval inbox** for requests awaiting a decision. The browser only reads requests and timelines it is allowed to see. PostgreSQL functions validate mutations, enforce stage order, and record a delivery item in the same transaction as the action.
 
-When an employee resubmits a returned PRF, the timeline shows the **From** and **To** values for each changed field. The same history appears in the print and export preview.
+When a requester resubmits a returned PRF, the timeline shows the **From** and **To** values for each changed field. The same history appears in the print and export preview.
 
 The **Approval inbox** badge counts requests currently awaiting your decision, across all inbox views. Use the separate status filter to find requests assigned to you at either review stage or with an Approved, Returned, or Disapproved outcome. **Compact** controls table and pagination density. The request tables remember your page size and density in the current browser.
 
