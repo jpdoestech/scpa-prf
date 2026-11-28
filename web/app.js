@@ -249,32 +249,37 @@ function openProfile() {
   clearTimeout(searchTimer);
   screen = 'profile';
   const password = (name, label, autocomplete) => field(name, label,
-    `<input type="password" name="${name}" autocomplete="${autocomplete}" required ${autocomplete === 'new-password' ? 'minlength="12" maxlength="72"' : ''}>`);
-  renderFrame(`${backButton('close-profile', 'Back to workspace')}
-    <div class="heading"><h1 tabindex="-1">My account</h1></div>
+    `<input type="password" name="${name}" autocomplete="${autocomplete}" required ${autocomplete === 'new-password' ? 'minlength="12" maxlength="72"' : ''}
+      ${name === 'new_password' ? 'aria-describedby="profile-password-help"' : ''}>`);
+  renderFrame(`<div class="heading register-heading profile-heading"><h1 tabindex="-1">My account</h1>${backButton('close-profile', 'Back to workspace')}</div>
     <div class="profile-layout">
-      <section class="panel panel-content profile-section"><h2>Personal details</h2>
-        <div class="profile-email"><span class="muted small">Sign-in email</span><strong>${escape(accountUser.email)}</strong></div>
-        <form id="profile-name" class="sheet">
-          ${field('display-name', 'Display name', `<input name="display_name" value="${escape(person.name)}" maxlength="100" autocomplete="name" required>`)}
-          <div class="actions">${submitButton('Save name', 'check')}</div>
-        </form>
-        <form id="profile-photo" class="sheet">
-          <h2>Profile picture</h2>
-          <div class="photo-settings">
-            <span class="avatar profile-avatar" data-own-avatar aria-hidden="true">${avatarImage()}</span>
-            <label class="button secondary file-picker">${icon('image')}Choose photo<input type="file" name="photo" accept="image/*" required></label>
-          </div>
-          <output class="small muted photo-selection" aria-live="polite"></output>
-          <div class="actions">${submitButton('Save photo', 'check')}</div>
-        </form>
-      </section>
-      <section class="panel panel-content profile-section"><h2>Change password</h2>
-        <form id="profile-password" class="sheet">
+      <div class="profile-identity">
+        <section class="panel request-panel" aria-labelledby="profile-name-heading"><h2 id="profile-name-heading">${icon('users')}Personal details</h2>
+          <form id="profile-name" class="account-form">
+            <dl class="profile-email"><dt>Sign-in email</dt><dd>${escape(accountUser.email)}</dd></dl>
+            ${field('display-name', 'Display name', `<input name="display_name" value="${escape(person.name)}" maxlength="100" autocomplete="name" required>`)}
+            <div class="actions">${submitButton('Save name', 'check')}</div>
+          </form>
+        </section>
+        <section class="panel request-panel" aria-labelledby="profile-photo-heading"><h2 id="profile-photo-heading">${icon('image')}Profile picture</h2>
+          <form id="profile-photo" class="account-form">
+            <div class="photo-settings">
+              <span class="avatar profile-avatar" data-own-avatar aria-hidden="true">${avatarImage()}</span>
+              <div class="photo-choice">
+                <label class="button secondary file-picker">${icon('image')}Choose photo<input type="file" name="photo" accept="image/*" aria-describedby="profile-photo-selection" required></label>
+                <output id="profile-photo-selection" class="small muted photo-selection" aria-live="polite"></output>
+              </div>
+            </div>
+            <div class="actions">${submitButton('Save photo', 'check')}</div>
+          </form>
+        </section>
+      </div>
+      <section class="panel request-panel" aria-labelledby="profile-password-heading"><h2 id="profile-password-heading">${icon('lock')}Change password</h2>
+        <form id="profile-password" class="account-form">
           ${password('current_password', 'Current password', 'current-password')}
           ${password('new_password', 'New password', 'new-password')}
           ${password('confirm_password', 'Confirm new password', 'new-password')}
-          <small class="muted">Use at least 12 characters.</small>
+          <small id="profile-password-help" class="muted">Use at least 12 characters.</small>
           <div class="actions">${submitButton('Change password', 'lock')}</div>
         </form>
       </section>
@@ -1336,7 +1341,13 @@ app.addEventListener('click', async e => {
       ${optionDialogFooter('discard', 'Discard changes', 'close', true)}`, target, { alert: true });
     if (!discard) return;
   }
-  if (adminDirty && ['admin', 'requests', 'inbox', 'profile', 'signout'].includes(action)) {
+  const leavingProfile = screen === 'profile' && ['close-profile', 'requests', 'inbox', 'admin', 'signout'].includes(action);
+  const profileChanged = leavingProfile && (
+    document.getElementById('profile-name').elements.display_name.value !== person.name ||
+    document.getElementById('profile-photo').elements.photo.files.length ||
+    [...app.querySelectorAll('#profile-password input')].some(input => input.value)
+  );
+  if (profileChanged || (adminDirty && ['admin', 'requests', 'inbox', 'profile', 'signout'].includes(action))) {
     const discard = await optionDialog('Discard account changes?', `<p id="option-dialog-description">Your unsaved changes will be lost.</p>
       ${optionDialogFooter('discard', 'Discard changes', 'close', true)}`, target, { alert: true });
     if (!discard) return;
@@ -1360,6 +1371,7 @@ app.addEventListener('click', async e => {
     openProfile();
   } else if (action === 'close-profile') {
     const previous = profileReturn;
+    const revision = routeRevision + 1;
     profileReturn = null;
     if (previous?.mode === 'detail') await openRecord(previous.id);
     else if (previous?.mode === 'options') await openRequestOptions();
@@ -1367,6 +1379,10 @@ app.addEventListener('click', async e => {
     else {
       requestListReturn = previous;
       await goList(previous?.mode === 'inbox' ? 'inbox' : 'requests', true);
+    }
+    if (revision === routeRevision) {
+      window.scrollTo(0, previous?.scroll ?? 0);
+      app.querySelector('[data-action="profile"]')?.focus({ preventScroll: true });
     }
   } else if (action === 'add-request-option') {
     await saveRequestOption(target);
