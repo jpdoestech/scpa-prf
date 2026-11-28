@@ -79,6 +79,14 @@ export async function context() {
   return config.demo ? demoPeople[demoRole] : unwrap(await supabase.rpc('prf_context'));
 }
 
+export async function printTemplates() {
+  return config.demo ? ['original', 'wrapped'] : unwrap(await supabase.rpc('prf_print_templates'));
+}
+
+export async function savePrintTemplates(enabledTemplates) {
+  return unwrap(await supabase.rpc('prf_save_print_templates', { enabled_templates: enabledTemplates }));
+}
+
 export async function saveOwnName(name, adminOnly) {
   if (adminOnly) {
     const { user } = unwrap(await supabase.auth.updateUser({ data: { prf_display_name: name } }));

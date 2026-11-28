@@ -1,6 +1,7 @@
 import { approvalTime, assignments, correctionHistory, eventTitle, neededDateRange, prfNumber, requisitions, services } from './model.js';
 
 const logo = './assets/scpa-logo.png';
+const originalTemplate = './assets/scpa-prf-template.png';
 const svgNS = 'http://www.w3.org/2000/svg';
 const formWidth = 552;
 const printInset = 14;
@@ -37,9 +38,9 @@ function wrapText(context, value, width) {
   return lines;
 }
 
-async function embeddedLogo() {
+async function embeddedImage(asset) {
   const picture = new Image();
-  picture.src = logo;
+  picture.src = asset;
   await picture.decode();
   const canvas = document.createElement('canvas');
   canvas.width = picture.naturalWidth;
@@ -90,20 +91,93 @@ function formSection(context, name, draw) {
   return { svg, height };
 }
 
-export async function preparePrint(row, paper, events) {
-  const paperWidth = paper === 'Letter' ? 215.9 : 210;
-  const paperHeight = paper === 'Letter' ? 279.4 : 297;
-  document.getElementById('print-preview').style.setProperty('--paper-width', paperWidth + 'mm');
-  let rules = document.getElementById('print-paper');
-  if (!rules) {
-    rules = document.createElement('style');
-    rules.id = 'print-paper';
-    document.head.append(rules);
-  }
-  rules.textContent = '@page { size: ' + (paper === 'Letter' ? 'Letter' : 'A4') + ' portrait; margin: ' + printInset + 'mm; }';
-
+async function originalForm(row) {
   const f = row.form;
-  const picture = await embeddedLogo();
+  const svg = svgNode('svg', { viewBox: '30 469 552 465', role: 'img', 'aria-label': 'SCPA Personnel Requisition Form' });
+  svg.append(svgNode('image', { x: 30, y: 469, width: 552, height: 465, href: await embeddedImage(originalTemplate) }));
+  const notes = [];
+
+  const canvas = document.createElement('canvas').getContext('2d');
+  function addExtra(label, value) {
+    if (!value) return;
+    const line = document.createElement('p');
+    const heading = document.createElement('strong');
+    heading.textContent = `${label} — `;
+    line.append(heading, document.createTextNode(value.trim()));
+    notes.push(line);
+  }
+  function line(value, x, y, width, label, secondLine) {
+    if (!value) return;
+    const original = value;
+    let text = value.replace(/\s+/g, ' ').trim();
+    const size = 8.8;
+    canvas.font = `${size}px Arial`;
+    if (canvas.measureText(text).width > width && secondLine) {
+      const words = text.split(' ');
+      let first = words.shift();
+      while (words.length && canvas.measureText(`${first} ${words[0]}`).width <= width) first += ` ${words.shift()}`;
+      const rest = words.join(' ');
+      if (canvas.measureText(first).width <= width && rest &&
+        canvas.measureText(rest).width <= secondLine.width) {
+        line(first, x, y, width, label);
+        line(rest, secondLine.x, secondLine.y, secondLine.width, label);
+        return;
+      }
+    }
+    if (canvas.measureText(text).width > width) {
+      addExtra(label, original);
+      while (text && canvas.measureText(`${text}…`).width > width) text = text.slice(0, -1);
+      text += '…';
+    }
+    const node = svgNode('text', { x, y, 'font-family': 'Arial, sans-serif', 'font-size': size, fill: '#111' });
+    node.textContent = text;
+    svg.append(node);
+  }
+  function check(x, y) {
+    if (Number.isFinite(y)) {
+      svg.append(svgNode('rect', { x, y: y - 4.1, width: 6.4, height: 6.4, fill: '#111' }));
+    }
+  }
+
+  line(prfNumber(row), 498, 516.3, 77, 'PRF number');
+  line(row.branch_name, 498, 528.5, 77, 'Branch / Office');
+  line(row.requester_name, 192, 586.7, 158, 'Requester');
+  line(approvalTime(row.submitted_at, true), 436, 587, 137, 'Date requested');
+  line(f.position, 192, 598.4, 158, 'Position');
+  line(neededDateRange(f), 436, 599, 137, 'Date needed');
+  line(f.area, 121, 611.9, 230, 'Assigned area / store');
+  line(f.headcount, 471, 611.9, 102, 'Headcount');
+  check(55, { continuous: 652.5, year: 664.3, six_months: 676.1, three_months: 687.9, other: 699.6 }[f.service]);
+  check(326, { full_time: 655.8, part_time: 667.5, on_call: 679.1 }[f.assignment]);
+  check(55, { new: 734.6, replacement: 746.4, additional: 781.4, other: 793.2 }[f.requisition]);
+  line(f.service_other, 176, 702.4, 77, 'Other service time frame');
+  if (f.requisition === 'replacement') {
+    line(f.reason, 335, 747.5, 238, 'Replacement details', { x: 75, y: 764.9, width: 497 });
+  } else if (f.requisition === 'additional') {
+    line(f.reason, 265, 784.8, 307, 'Reason for additional personnel');
+  } else if (f.requisition === 'other') {
+    line(f.reason, 176, 796.2, 77, 'Other requisition details');
+  }
+  line(f.schedule, 273, 819.3, 298, 'Work schedule');
+  line(f.salary, 188, 831, 190, 'Proposed salary');
+  line(f.allowance, 505, 830.6, 70, 'Allowance');
+  if (row.supervisor_at) {
+    line(row.supervisor_name, 175.5, 900.6, 175, 'Supervisor');
+    line(approvalTime(row.supervisor_at), 393, 900.6, 179, 'Supervisor approval time');
+  }
+  if (row.hrd_at) {
+    line(row.hrd_name, 144, 912, 207, 'Authorized HRD officer');
+    line(approvalTime(row.hrd_at), 393, 912, 179, 'HRD approval time');
+  }
+  addExtra('Work assignment description', f.assignment_description);
+  addExtra('Work assignment remarks', f.assignment_remarks);
+  addExtra('Qualifications', f.qualifications);
+  return { sections: [{ svg, height: 465 }], notes };
+}
+
+async function wrappedForm(row) {
+  const f = row.form;
+  const picture = await embeddedImage(logo);
   const context = document.createElement('canvas').getContext('2d');
   const sections = [
     formSection(context, 'SCPA Personnel Requisition Form', ({ add, text, rule, fields }) => {
@@ -120,13 +194,18 @@ export async function preparePrint(row, paper, events) {
       y = fields(y, ['Requested personnel position title', f.position], ['Date needed', neededDateRange(f)]);
       return fields(y, ['Assigned area / store', f.area], ['No. of personnel requested', f.headcount]);
     }),
-    formSection(context, 'Service time frame and work assignment', ({ choices, fields }) => {
-      const y = Math.max(choices('Service time frame', services, f.service, 2, 11),
-        choices('Work assignment', assignments, f.assignment, 285, 11));
-      return f.service_other ? fields(y, ['Other service time frame', f.service_other]) : y;
-    }),
-    formSection(context, 'Requisition type', ({ choices }) => choices('Requisition type', requisitions, f.requisition, 2, 11)),
+    formSection(context, 'Service time frame and work assignment', ({ choices }) =>
+      Math.max(choices('Service time frame', services, f.service, 2, 11),
+        choices('Work assignment', assignments, f.assignment, 285, 11))),
   ];
+  for (const [label, value] of [
+    ['Other service time frame', f.service_other],
+    ['Work assignment description', f.assignment_description],
+    ['Work assignment remarks', f.assignment_remarks],
+  ]) {
+    if (value) sections.push(formSection(context, label, ({ fields }) => fields(11, [label, value])));
+  }
+  sections.push(formSection(context, 'Requisition type', ({ choices }) => choices('Requisition type', requisitions, f.requisition, 2, 11)));
   if (f.reason) sections.push(formSection(context, 'Requisition details', ({ fields }) => fields(11, ['Requisition details', f.reason])));
   sections.push(formSection(context, 'Work terms', ({ fields }) => {
     const y = fields(11, ['Work schedule', f.schedule]);
@@ -142,8 +221,51 @@ export async function preparePrint(row, paper, events) {
   }));
   if (f.qualifications) sections.push(formSection(context, 'Qualifications', ({ fields }) => fields(11, ['Qualifications', f.qualifications])));
 
-  const supplement = document.createElement('section');
-  supplement.className = 'print-supplement';
+  return { sections, notes: [] };
+}
+
+function paginatePrint(sections, notes, paperWidth, paperHeight) {
+  const root = document.getElementById('print-root');
+  const measure = document.createElement('div');
+  measure.className = 'print-measure';
+  measure.style.width = (paperWidth - 2 * printInset) + 'mm';
+  const items = [...sections.map(({ svg }) => svg), ...notes];
+  measure.append(...items);
+  document.body.append(measure);
+  const heights = items.map(item => item.getBoundingClientRect().height);
+  const limit = (paperHeight - 2 * printInset - 1) * pxPerMm;
+  const pages = [];
+  let sheet, used;
+  for (const [index, item] of items.entries()) {
+    const height = heights[index];
+    const groupHeight = height + (item.tagName === 'H2' ? heights[index + 1] ?? 0 : 0);
+    if (!sheet || (used && used + groupHeight > limit)) {
+      sheet = document.createElement('div');
+      sheet.className = 'print-sheet';
+      used = 0;
+      pages.push(sheet);
+    }
+    sheet.append(item);
+    used += height;
+  }
+  measure.remove();
+  root.replaceChildren(...pages);
+}
+
+export async function preparePrint(row, paper, events, template = 'original') {
+  const paperWidth = paper === 'Letter' ? 215.9 : 210;
+  const paperHeight = paper === 'Letter' ? 279.4 : 297;
+  const { sections, notes } = await (template === 'wrapped' ? wrappedForm(row) : originalForm(row));
+  document.getElementById('print-preview').style.setProperty('--paper-width', paperWidth + 'mm');
+  let rules = document.getElementById('print-paper');
+  if (!rules) {
+    rules = document.createElement('style');
+    rules.id = 'print-paper';
+    document.head.append(rules);
+  }
+  // Each sheet supplies its own inset even if the browser's margins are disabled.
+  rules.textContent = '@page { size: ' + (paper === 'Letter' ? 'Letter' : 'A4') + ' portrait; margin: 0; }';
+  document.getElementById('print-root').style.setProperty('--print-inset', printInset + 'mm');
   const paragraph = text => {
     const node = document.createElement('p');
     node.textContent = text;
@@ -152,16 +274,17 @@ export async function preparePrint(row, paper, events) {
   const stamp = paragraph(exportStamp('Prepared for print'));
   const heading = document.createElement('h2');
   heading.textContent = 'Request timeline';
-  supplement.append(paragraph('Notice: This form was generated by the PRF system. Approvals are recorded electronically. No handwritten signature is required.'), stamp, heading);
+  notes.push(paragraph('Notice: This form was generated by the PRF system. Approvals are recorded electronically. No handwritten signature is required.'), stamp, heading);
   for (const event of events) {
     const note = event.note?.trim();
-    supplement.append(paragraph([approvalTime(event.occurred_at) + ' PHT', eventTitle(event), event.actor_name].join(' · ') + (note ? ' — ' + note : '')));
+    notes.push(paragraph([approvalTime(event.occurred_at) + ' PHT', eventTitle(event), event.actor_name].join(' · ') + (note ? ' — ' + note : '')));
     for (const { label, from, to } of correctionHistory(event)) {
-      supplement.append(paragraph(label + '\nFrom  ' + from + '\nTo  ' + to));
+      notes.push(paragraph(label + '\nFrom  ' + from + '\nTo  ' + to));
     }
   }
-  document.getElementById('print-root').replaceChildren(...sections.map(section => section.svg), supplement);
-  return { sections, supplement, stamp, paperWidth, paperHeight };
+  for (const node of notes) node.classList.add('print-note');
+  paginatePrint(sections, notes, paperWidth, paperHeight);
+  return { sections, notes, stamp, paperWidth, paperHeight };
 }
 
 function exportStamp(action) {
@@ -184,7 +307,7 @@ export function preparePrintImage(sections) {
   }));
 }
 
-export function drawPrintImage({ sections, supplement, stamp, paperWidth, paperHeight }, layers, action) {
+export function drawPrintImage({ sections, notes, stamp, paperWidth, paperHeight }, layers, action) {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   const pageWidth = paperWidth * pxPerMm;
@@ -194,7 +317,7 @@ export function drawPrintImage({ sections, supplement, stamp, paperWidth, paperH
   const textInset = 2 * pxPerMm;
   const lines = [];
   let y = inset + sections.reduce((sum, section) => sum + section.height * sectionScale, 0) + 3 * pxPerMm;
-  for (const node of supplement.children) {
+  for (const node of notes) {
     const font = node.tagName === 'H2' ? 'bold 13px Arial, sans-serif' : '12px Arial, sans-serif';
     context.font = font;
     const text = node === stamp ? exportStamp(action) : node.textContent;

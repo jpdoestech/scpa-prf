@@ -34,11 +34,10 @@ export function neededDateRange({ needed, needed_to: end = needed }) {
   if (!needed) return '';
   const first = new Date(`${needed}T00:00:00Z`);
   const last = new Date(`${end || needed}T00:00:00Z`);
-  const days = (last - first) / 86_400_000 + 1;
   const finish = rangeDate.format(last);
-  if (days === 1) return `${finish} (1 day)`;
+  if (+first === +last) return finish;
   const start = first.getUTCFullYear() === last.getUTCFullYear() ? rangeDay : rangeDate;
-  return `${start.format(first)} – ${finish} (${days} days)`;
+  return `${start.format(first)} – ${finish}`;
 }
 export function approvalTime(value, spaceBeforePeriod = false) {
   if (!value) return '';
@@ -74,6 +73,7 @@ const correctionFields = {
   requester_name: 'Requested by', branch_name: 'Branch / office', position: 'Position title',
   area: 'Assigned area / store', needed: 'Date needed from', needed_to: 'Date needed to', headcount: 'Headcount',
   service: 'Service time frame', service_other: 'Service time frame details', assignment: 'Work assignment',
+  assignment_description: 'Work assignment description', assignment_remarks: 'Work assignment remarks',
   schedule: 'Work schedule', requisition: 'Requisition type', reason: 'Requisition details',
   qualifications: 'Qualifications', salary: 'Proposed salary', allowance: 'Allowance',
 };

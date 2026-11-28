@@ -2,6 +2,7 @@ import {
   config, supabase, context, adminAccounts, dashboard, pendingApprovals, record, requestOptions,
   optionDirectory, editRequestOption, addRequestOption, submit, decide, setDemoRole, currentDemoRole,
   pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto, employeeDirectory, saveEmployeeBranches,
+  printTemplates, savePrintTemplates,
 } from './data.js';
 import { statuses, services, assignments, requisitions, canDecide, skippedApproval, nextActor, eventTitle, correctionHistory, neededDateRange, dateTime, approvalTime, prfNumber } from './model.js';
 import { preparePrintImage, drawPrintImage, preparePrint, stampPrint } from './print.js';
@@ -72,6 +73,7 @@ const optionKinds = { branch: 'Branch', position: 'Position title', area: 'Assig
 let optionKind = 'branch';
 let optionOrigin;
 const printPreview = document.getElementById('print-preview');
+const printTemplateLabels = { original: 'Original PRF', wrapped: 'Wrapped PRF' };
 let printReturn;
 const canCopyImage = Boolean(navigator.clipboard?.write && window.ClipboardItem);
 let approvalCount = 0;
@@ -534,7 +536,8 @@ async function openAdmin(view = '', message = '') {
       renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
         <div class="actions">${person.superAdmin && hasBranchDirectory ? button('new-branch', 'Add branch', 'secondary', 'plus') : ''}
           ${button('request-options', 'Request options', 'secondary', 'list')}
-          ${person.superAdmin ? button('manage-prf-records', 'Manage PRF records', 'secondary', 'archive') + button('new-user', 'New user', 'primary', 'plus') : ''}</div></div>
+          ${person.superAdmin ? button('manage-prf-records', 'Manage PRF records', 'secondary', 'archive') +
+            button('print-settings', 'Print templates', 'secondary', 'print', 'aria-haspopup="dialog"') + button('new-user', 'New user', 'primary', 'plus') : ''}</div></div>
         <section class="panel users-panel" aria-label="User accounts">
           <header class="panel-header"><h2 id="user-count" aria-live="polite">Accounts</h2>
             <label class="search user-search">${icon('search')}
@@ -729,7 +732,9 @@ function formView(options) {
       <section class="panel form-section"><h2>Assignment</h2><div class="field-grid">
         ${select('service', 'Service time frame', services)}
         ${select('assignment', 'Work assignment', assignments)}
-        ${input('service_other', 'Specify service time frame', 'text', 'maxlength="120"', 'wide')}
+        ${textarea('service_other', 'Specify service time frame', 650, 3)}
+        ${textarea('assignment_description', 'Work assignment description', 650, 3)}
+        ${textarea('assignment_remarks', 'Work assignment remarks', 650, 4)}
         ${input('schedule', 'Work schedule', 'text', 'maxlength="120" placeholder="e.g., Monday to Saturday, 8 AM–5 PM" required', 'wide')}
       </div></section>
       <section class="panel form-section"><h2>Requisition details</h2><div class="field-grid">
@@ -754,6 +759,11 @@ function conditionalFields() {
   document.getElementById('field-service_other').hidden = !isOther;
   form.elements.service_other.required = isOther;
   form.elements.service_other.disabled = !isOther;
+  const hasAssignment = Boolean(form.elements.assignment.value);
+  for (const name of ['assignment_description', 'assignment_remarks']) {
+    document.getElementById(`field-${name}`).hidden = !hasAssignment;
+    form.elements[name].disabled = !hasAssignment;
+  }
   const reasonLabel = {
     replacement: 'Employee to be replaced and reason',
     additional: 'Reason for additional personnel',
@@ -787,8 +797,11 @@ function detailView() {
         ${fieldEntry('Requested by', r.requester_name)}${fieldEntry('Branch / office', r.branch_name)}
         ${fieldEntry('Assigned area / store', f.area)}${fieldEntry('Headcount', f.headcount)}
         ${fieldEntry('Date requested', approvalTime(r.submitted_at, true))}${fieldEntry('Date needed', neededDateRange(f))}
-        ${fieldEntry('Service time frame', f.service_other || services[f.service])}
+        ${fieldEntry('Service time frame', services[f.service])}
         ${fieldEntry('Work assignment', assignments[f.assignment])}
+        ${fieldEntry('Other service time frame', f.service_other, true)}
+        ${fieldEntry('Work assignment description', f.assignment_description, true)}
+        ${fieldEntry('Work assignment remarks', f.assignment_remarks, true)}
         ${fieldEntry('Requisition type', requisitions[f.requisition])}${fieldEntry('Work schedule', f.schedule)}
         ${fieldEntry('Requisition details', f.reason, true)}${fieldEntry('Qualifications', f.qualifications, true)}
         ${fieldEntry('Proposed salary', f.salary)}${fieldEntry('Allowance', f.allowance)}
@@ -859,7 +872,7 @@ const optionActions = {
   delete: { label: 'Delete', icon: 'close', message: 'This permanently removes the option from the directory. Existing requests keep their saved values.' },
 };
 
-function optionDialog(title, content, launcher, { sheet = false, save } = {}) {
+function optionDialog(title, content, launcher, { sheet = false, save, alert = Boolean(save) } = {}) {
   const dialog = document.createElement('dialog');
   dialog.className = `option-dialog${sheet ? ' option-action-sheet' : ''}`;
   dialog.setAttribute('aria-labelledby', 'option-dialog-title');
@@ -871,7 +884,7 @@ function optionDialog(title, content, launcher, { sheet = false, save } = {}) {
   const viewport = window.visualViewport;
   const renameFields = form.querySelector('.option-rename-fields');
   const nameInput = renameFields?.querySelector('input');
-  if (save && !renameFields) dialog.setAttribute('role', 'alertdialog');
+  if (alert && !renameFields) dialog.setAttribute('role', 'alertdialog');
   if (form.querySelector('#option-dialog-description')) dialog.setAttribute('aria-describedby', 'option-dialog-description');
   if (renameFields) dialog.classList.add('option-rename-dialog');
   const fit = () => {
@@ -1112,7 +1125,7 @@ app.addEventListener('change', async e => {
     paper = target.value;
   } else if (target.form?.id === 'profile-photo') {
     target.form.querySelector('output').textContent = target.files[0]?.name ?? '';
-  } else if (target.name === 'service' || target.name === 'requisition') {
+  } else if (['service', 'assignment', 'requisition'].includes(target.name)) {
     conditionalFields();
   } else if (target.name === 'needed' && target.form?.id === 'request-form') {
     target.form.elements.needed_to.min = target.value;
@@ -1223,6 +1236,26 @@ app.addEventListener('click', async e => {
     adminListPosition = window.scrollY;
     adminLauncher = 'manage-prf-records';
     await openPrfRecords();
+  } else if (action === 'print-settings' && person?.superAdmin) {
+    try {
+      target.disabled = true;
+      const enabled = await printTemplates();
+      if (!target.isConnected) return;
+      target.disabled = false;
+      const saved = await optionDialog('Print templates', `<p id="option-dialog-description">Enable one layout for everyone, or enable both so users can choose in Print/Export PRF.</p>
+        <fieldset class="print-template-settings" aria-label="Available layouts">${Object.entries(printTemplateLabels).map(([template, label]) =>
+          `<label class="branch-check"><input type="checkbox" name="template" value="${template}" ${enabled.includes(template) ? 'checked' : ''}>${label}</label>`).join('')}</fieldset>
+        ${optionDialogFooter('save', 'Save templates', 'check')}`, target, { alert: false, save: form => {
+        const templates = new FormData(form).getAll('template');
+        if (!templates.length) throw new Error('Enable at least one print template.');
+        return savePrintTemplates(templates);
+      } });
+      if (saved) banner('Print templates saved.');
+    } catch (error) {
+      banner(error.message, true);
+    } finally {
+      target.disabled = false;
+    }
   } else if (['prf-record-previous', 'prf-record-next'].includes(action) && person?.superAdmin && prfRecordReview) {
     const { period, value, offset } = prfRecordReview;
     await openPrfRecords(period, value, Math.max(0, offset + (action === 'prf-record-next' ? 25 : -25)));
@@ -1303,24 +1336,20 @@ app.addEventListener('click', async e => {
   } else if (action === 'export') {
     try {
       markBusy(true);
-      const row = detail.row;
-      const prepared = await preparePrint(row, paper, detail.events);
-      const preview = printReturn = { button: target, scroll: window.scrollY, prepared,
+      const { row, events } = detail;
+      const templates = await printTemplates();
+      const template = templates[0];
+      const prepared = await preparePrint(row, paper, events, template);
+      const preview = printReturn = { button: target, scroll: window.scrollY, row, events, paper, templates, template, prepared,
         filename: `${row.number ?? `PRF-pending-${row.id.slice(0, 8)}`}.png` };
+      printTemplateSelect.replaceChildren(...templates.map(key => new Option(printTemplateLabels[key], key)));
+      printTemplateSelect.closest('label').hidden = templates.length < 2;
       app.hidden = true;
       printPreview.hidden = false;
       window.scrollTo(0, 0);
       const printButton = printPreview.querySelector('[data-action="send-to-printer"]');
       printButton.focus({ preventScroll: true });
-      void preparePrintImage(prepared.sections).then(layer => {
-        if (printReturn !== preview) return;
-        preview.layer = layer;
-        printDownload.disabled = false;
-        if (canCopyImage) copyImageButton.disabled = false;
-        if (document.activeElement === printButton && window.matchMedia('(pointer: fine)').matches) printDownload.focus({ preventScroll: true });
-      }).catch(() => {
-        if (printReturn === preview) printStatus.textContent = 'Could not create the PNG. Printing is still available.';
-      });
+      loadPrintImages(preview);
     } catch (err) {
       banner(`Could not prepare the printout. ${err.message}`, true);
     } finally {
@@ -1333,11 +1362,51 @@ printPreview.querySelector('.print-controls').innerHTML = `<div class="actions">
   ${button('send-to-printer', 'Print', 'primary', 'print')}
   ${button('download-print', 'Download PNG', 'secondary', 'download', 'disabled')}
   ${button('copy-print', 'Copy image', 'secondary', 'copy', `disabled ${canCopyImage ? '' : 'hidden'}`)}
-  </div><p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>
+  </div><label class="print-template-choice" hidden>Print template <select id="print-template-choice" aria-label="Print template"></select></label>
+  <p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>
   <p class="print-export-status small" role="status"></p>`;
 const printDownload = printPreview.querySelector('[data-action="download-print"]');
 const copyImageButton = printPreview.querySelector('[data-action="copy-print"]');
 const printStatus = printPreview.querySelector('.print-export-status');
+const printTemplateSelect = document.getElementById('print-template-choice');
+const printButton = printPreview.querySelector('[data-action="send-to-printer"]');
+const closePrintButton = printPreview.querySelector('[data-action="close-print"]');
+
+function loadPrintImages(preview) {
+  const prepared = preview.prepared;
+  preview.layer = null;
+  printDownload.disabled = copyImageButton.disabled = true;
+  void preparePrintImage(prepared.sections).then(layer => {
+    if (printReturn !== preview || preview.prepared !== prepared) return;
+    preview.layer = layer;
+    printDownload.disabled = false;
+    copyImageButton.disabled = !canCopyImage;
+  }).catch(() => {
+    if (printReturn === preview && preview.prepared === prepared) printStatus.textContent = 'Could not create the PNG. Printing is still available.';
+  });
+}
+
+printTemplateSelect.addEventListener('change', async () => {
+  const preview = printReturn;
+  const template = printTemplateSelect.value;
+  if (!preview?.templates.includes(template) || template === preview.template) return;
+  printTemplateSelect.disabled = printButton.disabled = closePrintButton.disabled = true;
+  printDownload.disabled = copyImageButton.disabled = true;
+  printStatus.textContent = '';
+  try {
+    preview.prepared = await preparePrint(preview.row, preview.paper, preview.events, template);
+    preview.template = template;
+    loadPrintImages(preview);
+  } catch (error) {
+    printTemplateSelect.value = preview.template;
+    printDownload.disabled = !preview.layer;
+    copyImageButton.disabled = !preview.layer || !canCopyImage;
+    printStatus.textContent = error.message;
+  } finally {
+    printTemplateSelect.disabled = printButton.disabled = closePrintButton.disabled = false;
+    printTemplateSelect.focus({ preventScroll: true });
+  }
+});
 printPreview.addEventListener('click', async event => {
   const action = event.target.closest('button')?.dataset.action;
   if (action === 'send-to-printer') {

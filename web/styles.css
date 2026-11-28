@@ -326,14 +326,18 @@ textarea{resize:vertical}
 #print-preview{width:min(100%,var(--paper-width,210mm));margin-inline:auto;padding:.75rem}
 .print-controls{padding:.25rem 0 .75rem}
 .print-controls .back{margin:0}
+.print-template-choice{display:flex;align-items:center;flex-wrap:wrap;gap:.45rem;margin-top:.6rem;font-weight:700}
+.print-template-settings{margin:0;padding:.2rem .65rem;border:1px solid var(--line);border-radius:9px}
 .print-export-status{margin-top:.35rem;color:var(--deep)}
 .print-export-status:empty{display:none}
 .print-phone-help{margin-top:.5rem}
-#print-root{background:white;padding:clamp(.75rem,5vw,14mm);font-family:Arial,sans-serif}
-#print-root svg{display:block;width:100%;height:auto;margin-inline:auto}
-#print-root .print-supplement{margin:3mm 2mm 0;font-size:9pt;line-height:1.4;overflow-wrap:anywhere}
-#print-root .print-supplement p{margin:1mm 0;white-space:pre-wrap}
-#print-root .print-supplement h2{margin-top:2.5mm;font-size:10pt;letter-spacing:normal}
+#print-root{font-family:Arial,sans-serif}
+.print-sheet{background:white;padding:clamp(.75rem,5vw,var(--print-inset,14mm))}
+.print-sheet+.print-sheet{margin-top:.75rem}
+.print-sheet svg,.print-measure svg{display:block;width:100%;height:auto;margin-inline:auto}
+.print-measure{position:absolute;left:-200vw;top:0;visibility:hidden;pointer-events:none}
+.print-note{margin:0;padding:1mm 2mm;font-family:Arial,sans-serif;font-size:9pt;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
+h2.print-note{padding-top:2.5mm;font-size:10pt;letter-spacing:normal}
 @media(pointer:fine){.print-phone-help{display:none}}
 .scroll-top{position:fixed;z-index:3;inset-inline-end:max(1rem,env(safe-area-inset-right));bottom:1rem;width:46px;height:46px;padding:0;border-radius:50%;border-color:#9cb7a9;color:var(--deep);background:rgba(248,253,250,.78);backdrop-filter:blur(8px);box-shadow:0 3px 12px #173c2a1a}
 .scroll-top:hover{background:#e4f1e9}
@@ -401,8 +405,7 @@ textarea{resize:vertical}
   html,body{margin:0!important;background:white!important;color:black!important}
   #print-preview{width:100%;padding:0;margin:0}
   .print-controls{display:none!important}
-  #print-root{padding:0}
-  #print-root svg{break-inside:avoid}
-  #print-root .print-supplement h2{break-after:avoid}
-  #print-root .print-supplement p{break-inside:avoid}
+  .print-sheet{padding:var(--print-inset,14mm);break-inside:avoid;break-after:page}
+  .print-sheet+.print-sheet{margin-top:0}
+  .print-sheet:last-child{break-after:auto}
 }
