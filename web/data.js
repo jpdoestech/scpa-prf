@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
-import { canDecide } from './model.js';
+import { canDecide, skippedApproval } from './model.js';
 
 export const config = __PUBLIC_CONFIG__;
 export const supabase = config.demo ? null : createClient(config.url, config.key);
 export const pageSize = 10;
 const demoPeople = {
   employee: { id: 'demo-employee', name: 'Mika Reyes', branch: 'Metro Manila', approver: false },
-  supervisor: { id: 'demo-supervisor', name: 'Alex Garcia', branch: 'Metro Manila', approver: true },
-  hrd: { id: 'demo-hrd', name: 'Jamie Santos', branch: 'Main Office', approver: true },
+  supervisor: { id: 'demo-supervisor', name: 'Alex Garcia', branch: 'Metro Manila', approver: true, canOverrideApproval: true },
+  hrd: { id: 'demo-hrd', name: 'Jamie Santos', branch: 'Main Office', approver: true, canOverrideApproval: true },
 };
 const demoNames = {
   requester_id: demoPeople.employee.id, requester_name: demoPeople.employee.name, branch_name: 'Metro Manila',
@@ -183,8 +183,10 @@ export async function saveEmployeeBranches(id, branches) {
   return unwrap(await supabase.rpc('prf_save_employee_branches', { employee_id: id, branch_ids: branches }));
 }
 
-function approvalScope(query, id, assigned = false) {
-  return query.or(assigned
+function approvalScope(query, id, view) {
+  if (view === 'override') return query.neq('requester_id', id).or(
+    `and(status.in.(supervisor,hrd),supervisor_id.eq.${id}),and(status.eq.supervisor,hrd_id.eq.${id})`);
+  return query.or(view === 'assigned'
     ? `supervisor_id.eq.${id},hrd_id.eq.${id}`
     : `and(status.eq.supervisor,supervisor_id.eq.${id}),and(status.eq.hrd,hrd_id.eq.${id})`);
 }
@@ -201,8 +203,9 @@ export async function dashboard({ mode, id, status, search, page, rowsPerPage = 
   if (config.demo) {
     const demoId = demoPeople[demoRole].id;
     const assigned = r => [r.supervisor_id, r.hrd_id].includes(demoId);
-    const candidates = demoRows.filter(mode === 'inbox' ? (status === 'assigned' ? assigned : queue) : mine);
-    const matches = (r, s) => !s || s === 'assigned' || r.status === s ||
+    const override = r => demoPeople[demoRole].canOverrideApproval && skippedApproval(r, demoId);
+    const candidates = demoRows.filter(mode === 'inbox' ? ({ assigned, override }[status] ?? queue) : mine);
+    const matches = (r, s) => !s || ['assigned', 'override'].includes(s) || r.status === s ||
       (s === 'active' && ['supervisor', 'hrd'].includes(r.status)) ||
       (s === 'closed' && ['returned', 'disapproved'].includes(r.status));
     const visible = candidates.filter(r => matches(r, status) && (mode !== 'inbox' || !inboxStatus || r.status === inboxStatus) &&
@@ -220,11 +223,11 @@ export async function dashboard({ mode, id, status, search, page, rowsPerPage = 
       { count: 'exact', head },
     );
     q = mode === 'inbox'
-      ? approvalScope(q, id, s === 'assigned')
+      ? approvalScope(q, id, s)
       : q.eq('requester_id', id);
     if (s === 'active') q = q.in('status', ['supervisor', 'hrd']);
     else if (s === 'closed') q = q.in('status', ['returned', 'disapproved']);
-    else if (s && s !== 'assigned') q = q.eq('status', s);
+    else if (s && !['assigned', 'override'].includes(s)) q = q.eq('status', s);
     if (mode === 'inbox' && inboxStatus) q = q.eq('status', inboxStatus);
     if (term) q = q.ilike('search_text', `%${term.replace(/[\\%_]/g, '\\$&')}%`);
     return q;
@@ -300,12 +303,15 @@ export async function decide({ id, version, decision, note }) {
     request_id: id, expected_version: version, decision, remark: note,
   }));
   const row = demoRows.find(r => r.id === id);
-  if (!row || !queue(row) || version !== row.version) throw new Error('This request is no longer awaiting your decision.');
-  const stage = row.status;
+  const override = decision === 'override';
+  const eligible = row && (override ? demoPeople[demoRole].canOverrideApproval && skippedApproval(row, demoPeople[demoRole].id) : queue(row));
+  if (!eligible || version !== row.version) throw new Error('This request is no longer awaiting your decision.');
+  if (override && !note?.trim()) throw new Error('Enter a reason for the approval override.');
+  const stage = override ? demoRole : row.status;
   const at = new Date().toISOString();
-  if (decision === 'approve') {
-    row[stage === 'supervisor' ? 'supervisor_at' : 'hrd_at'] = at;
-    row.status = stage === 'supervisor' ? 'hrd' : 'approved';
+  if (decision === 'approve' || override) {
+    row[stage === 'supervisor' ? 'supervisor_at' : 'hrd_at'] ??= at;
+    row.status = stage === 'supervisor' && !override ? 'hrd' : 'approved';
     if (row.status === 'approved' && row.number === null) {
       const year = new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: 'Asia/Manila' }).format(new Date(at));
       const last = Math.max(24, ...demoRows.map(item => Number(item.number?.split('-').at(-1)) || 0));
@@ -317,7 +323,7 @@ export async function decide({ id, version, decision, note }) {
   row.updated_at = at;
   row.version += 1;
   row.events.push({ stage, occurred_at: at, actor_name: demoPeople[demoRole].name, note,
-    action: { approve: 'approved', return: 'returned', disapprove: 'disapproved' }[decision] });
+    action: { approve: 'approved', return: 'returned', disapprove: 'disapproved', override: 'approval_override' }[decision] });
   saveDemo();
   return row;
 }

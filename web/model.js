@@ -36,12 +36,21 @@ export function approvalTime(value, spaceBeforePeriod = false) {
 export const prfNumber = row => row.number ?? 'Not yet issued';
 export const canDecide = (r, id) =>
   (r.status === 'supervisor' && r.supervisor_id === id) || (r.status === 'hrd' && r.hrd_id === id);
+export const skippedApproval = (r, id) => {
+  if (r.requester_id === id) return '';
+  if (r.supervisor_id === id && ['supervisor', 'hrd'].includes(r.status)) return 'HRD';
+  if (r.hrd_id === id && r.status === 'supervisor') return 'Supervisor';
+  return '';
+};
 export const nextActor = r => ({
   supervisor: r.supervisor_name, hrd: r.hrd_name, returned: r.requester_name,
 })[r.status] ?? '';
 export const eventTitle = e => {
   if (e.action === 'submitted') return 'Request submitted';
   if (e.action === 'resubmitted') return 'Request resubmitted';
+  if (e.action === 'approval_override') return e.stage === 'hrd'
+    ? 'HRD approved with override (Supervisor step skipped)'
+    : 'Supervisor approved with override (HRD step skipped)';
   return `${e.stage === 'hrd' ? 'HRD' : 'Supervisor'} ${e.action === 'returned' ? 'returned for correction' : e.action}`;
 };
 

@@ -3,7 +3,7 @@ import {
   optionDirectory, editRequestOption, addRequestOption, submit, decide, setDemoRole, currentDemoRole,
   pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto, employeeDirectory, saveEmployeeBranches,
 } from './data.js';
-import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, correctionHistory, day, dateTime, approvalTime, prfNumber } from './model.js';
+import { statuses, services, assignments, requisitions, canDecide, skippedApproval, nextActor, eventTitle, correctionHistory, day, dateTime, approvalTime, prfNumber } from './model.js';
 import { preparePrintImage, drawPrintImage, preparePrint, stampPrint } from './print.js';
 import { enhanceSelects, focusSelect } from './search-select.js';
 
@@ -277,6 +277,7 @@ function listView() {
       <div class="filters"><label class="search">${icon('search')}<input id="search" type="search" maxlength="80" aria-label="Search requests" placeholder="Search requests" value="${escape(search)}"></label>
       ${inbox ? `<select id="filter" aria-label="Approval inbox view">
         <option value="">Awaiting my decision</option><option value="assigned" ${filter === 'assigned' ? 'selected' : ''}>All assigned requests</option>
+        ${person.canOverrideApproval ? `<option value="override" ${filter === 'override' ? 'selected' : ''}>Eligible for override</option>` : ''}
       </select><select id="inbox-status" aria-label="Approval inbox status">
         <option value="">All statuses</option>${Object.entries(statuses).map(([value, label]) =>
           `<option value="${value}" ${value === inboxStatus ? 'selected' : ''}>${label}</option>`).join('')}
@@ -459,6 +460,10 @@ function renderAccountForm(account, approvers, branches, branchField) {
           ${branchCheckboxes(branches, assigned)}
           ${field('account-role', 'Role', `<select name="role" required><option value="">Choose a role</option>${Object.entries(roleLabels).map(([id, label]) => `<option value="${id}" ${selected('role', id)}>${label}</option>`).join('')}</select>`)}
           ${creating ? '' : field('account-active', 'PRF access', `<select name="active"><option value="true"${current.active !== false ? ' selected' : ''}>Active</option><option value="false"${current.active === false ? ' selected' : ''}>Inactive</option></select>`)}
+          <label class="branch-check approval-override-control wide" ${['supervisor', 'hrd'].includes(current.role) ? '' : 'hidden'}>
+            <input type="checkbox" name="can_override_approval" ${current.can_override_approval ? 'checked' : ''}>
+            <span><strong>Allow approval override</strong><small>Can skip the other approval step on assigned PRFs. A reason is required.</small></span>
+          </label>
           ${approver('supervisor_id', 'Assigned supervisor', 'supervisor')}
           ${approver('hrd_id', 'Assigned HRD approver', 'hrd')}
           ${creating ? password('Initial password') : ''}
@@ -553,38 +558,28 @@ function requestOptionField(kind, label, addLabel, names, selected) {
     : choices.find(name => name.toLowerCase() === selected?.toLowerCase());
   const id = `request-option-${kind}`;
   return `<div class="request-option" data-option="${kind}">
-    <label class="field" for="${id}">${label}
-      <select name="${kind}" id="${id}"${kind === 'branch' ? '' : ' data-search-select'} required><option value="">Select an option</option>
+    <label class="request-option-label" for="${id}">${label}</label>
+    <div class="request-option-row">
+      <div class="request-option-choice"><select name="${kind}" id="${id}"${kind === 'branch' ? '' : ' data-search-select'} required>
+        <option value="">${kind === 'branch' ? 'Choose a branch' : kind === 'position' ? 'Choose a position' : 'Choose an area'}</option>
         ${choices.map(name => `<option value="${escape(name)}" ${name === selectedName ? 'selected' : ''}>${escape(name)}</option>`).join('')}
-      </select>
-    </label>
-    ${addLabel ? `<details><summary class="button secondary option-toggle">${icon('plus')}${addLabel}</summary>
-      <div class="option-editor">
-        <label class="field" for="${id}-name">New ${label.toLowerCase()}
-          <input id="${id}-name" type="text" maxlength="100" autocomplete="off">
-        </label>
-        ${button('add-request-option', 'Add option', 'secondary', 'check', 'data-mutation')}
-      </div>
-      <p role="status" class="small option-error"></p>
-    </details>` : ''}
+      </select></div>
+      ${addLabel ? button('add-request-option', 'Add', 'request-option-add', 'plus',
+        `aria-label="${escape(addLabel)}" title="${escape(addLabel)}" aria-haspopup="dialog"`) : ''}
+    </div>
   </div>`;
 }
 
 async function saveRequestOption(target) {
   const field = target.closest('[data-option]');
-  const input = field.querySelector('.option-editor input');
-  const name = input.value.trim();
-  const status = field.querySelector('.option-error');
-  status.textContent = '';
-  if (!name) {
-    status.textContent = 'Enter a name.';
-    input.focus();
-    return;
-  }
-  const confirmed = await confirmOption('add', name, target, () => addRequestOption(field.dataset.option, name));
+  const kind = field.dataset.option;
+  const confirmed = await optionDialog(target.getAttribute('aria-label'),
+    `<div class="option-rename-fields">${optionNameField(kind)}</div>
+    ${optionDialogFooter('add', 'Add and select', 'check', false, false)}`, target,
+    { save: form => addRequestOption(kind, form.elements.name.value.trim()) });
   if (confirmed) {
     const savedName = confirmed.value;
-    if (field.dataset.option === 'branch') adminDirectory = null;
+    if (kind === 'branch') adminDirectory = null;
     const select = field.querySelector('select');
     const options = [...select.options];
     if (!options.some(option => option.value === savedName)) {
@@ -592,11 +587,12 @@ async function saveRequestOption(target) {
       select.add(new Option(savedName), next ?? null);
     }
     select.value = savedName;
-    input.value = '';
-    field.querySelector('details').open = false;
     select.dispatchEvent(new Event('change', { bubbles: true }));
-    focusSelect(select);
   }
+}
+
+function optionNameField(kind) {
+  return field('new-option-name', optionKinds[kind], '<input name="name" maxlength="100" autocomplete="off" required autofocus pattern=".*\\S.*">');
 }
 
 function requestOptionFields(options, values = {}) {
@@ -673,6 +669,7 @@ function detailView() {
     `<div ${wide ? 'class="wide"' : ''}><dt>${label}</dt><dd>${escape(value)}</dd></div>` : '';
   const next = nextActor(r);
   const decision = canDecide(r, person.id);
+  const skipped = person.canOverrideApproval ? skippedApproval(r, person.id) : '';
   const mayEdit = r.requester_id === person.id && r.status === 'returned';
   renderFrame(`${backButton('back', screenOrigin === 'inbox' ? 'Back to approval inbox' : 'Back to requests')}
     <div class="heading"><div><p>${escape(prfNumber(r))}</p><h1 tabindex="-1">${escape(f.position)}</h1>
@@ -706,14 +703,15 @@ function detailView() {
           </div>`).join('')}</dl>` : ''}</li>`;
       }).join('')}</ol></section>
     </div>
-    ${decision ? `<section class="panel panel-content decision"><h2>Review request</h2>
+    ${decision || skipped ? `<section class="panel panel-content decision"><h2>Review request</h2>
       <form id="decision-form" class="decision">
         <div class="field-grid"><label class="field">Decision<select name="decision" required>
-          <option value="">Choose a decision</option><option value="approve">Approve</option>
-          <option value="return">Return for correction</option><option value="disapprove">Disapprove</option>
+          <option value="">Choose a decision</option>
+          ${decision ? '<option value="approve">Approve</option><option value="return">Return for correction</option><option value="disapprove">Disapprove</option>' : ''}
+          ${skipped ? `<option value="override">Approve with override</option>` : ''}
         </select></label>
         <label class="field wide">Comments<textarea name="note" maxlength="800" rows="3"></textarea>
-          <small>Enter a reason when returning or disapproving the request.</small></label></div>
+          <small id="decision-help">${decision ? 'Enter a reason when returning or disapproving the request.' : ''}</small></label></div>
         <div class="actions">${submitButton('Record decision', 'check')}</div>
       </form></section>` : ''}`);
 }
@@ -762,10 +760,6 @@ function optionDialog(title, content, launcher, { sheet = false, save } = {}) {
   const dialog = document.createElement('dialog');
   dialog.className = `option-dialog${sheet ? ' option-action-sheet' : ''}`;
   dialog.setAttribute('aria-labelledby', 'option-dialog-title');
-  if (save) {
-    dialog.setAttribute('role', 'alertdialog');
-    dialog.setAttribute('aria-describedby', 'option-dialog-description');
-  }
   dialog.innerHTML = `<form method="dialog"><h2 id="option-dialog-title">${escape(title)}</h2>
     ${content}<p class="option-dialog-error small" role="alert"></p></form>`;
   const form = dialog.querySelector('form');
@@ -774,6 +768,8 @@ function optionDialog(title, content, launcher, { sheet = false, save } = {}) {
   const viewport = window.visualViewport;
   const renameFields = form.querySelector('.option-rename-fields');
   const nameInput = renameFields?.querySelector('input');
+  if (save && !renameFields) dialog.setAttribute('role', 'alertdialog');
+  if (form.querySelector('#option-dialog-description')) dialog.setAttribute('aria-describedby', 'option-dialog-description');
   if (renameFields) dialog.classList.add('option-rename-dialog');
   const fit = () => {
     const height = viewport?.height || window.innerHeight;
@@ -794,6 +790,7 @@ function optionDialog(title, content, launcher, { sheet = false, save } = {}) {
   if (save) {
     const submit = form.querySelector('button[type="submit"]');
     const error = form.querySelector('[role="alert"]');
+    renameFields?.append(error);
     dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
     form.addEventListener('submit', async event => {
       event.preventDefault();
@@ -802,7 +799,7 @@ function optionDialog(title, content, launcher, { sheet = false, save } = {}) {
       error.textContent = '';
       form.setAttribute('aria-busy', 'true');
       try {
-        savedValue = await save();
+        savedValue = await save(form);
         dialog.close('saved');
       } catch (err) {
         error.textContent = err.message;
@@ -980,13 +977,13 @@ app.addEventListener('change', async e => {
   } else if (target.id === 'filter' || target.id === 'inbox-status') {
     if (target.id === 'filter') {
       filter = target.value;
-      if (screen === 'inbox' && !filter) {
+      if (screen === 'inbox' && (!filter || filter === 'override')) {
         inboxStatus = '';
         document.getElementById('inbox-status').value = '';
       }
     } else {
       inboxStatus = target.value;
-      if (inboxStatus) {
+      if (inboxStatus && filter !== 'override') {
         filter = 'assigned';
         document.getElementById('filter').value = filter;
       }
@@ -1006,8 +1003,13 @@ app.addEventListener('change', async e => {
     target.form.querySelector('output').textContent = target.files[0]?.name ?? '';
   } else if (target.name === 'service' || target.name === 'requisition') {
     conditionalFields();
+  } else if (target.name === 'role' && target.form?.id === 'admin-form') {
+    target.form.querySelector('.approval-override-control').hidden = !['supervisor', 'hrd'].includes(target.value);
   } else if (target.name === 'decision') {
-    target.form.elements.note.required = ['return', 'disapprove'].includes(target.value);
+    target.form.elements.note.required = Boolean(target.value && target.value !== 'approve');
+    document.getElementById('decision-help').textContent = target.value === 'override'
+      ? `Enter the reason for skipping ${skippedApproval(detail.row, person.id)} approval.`
+      : canDecide(detail.row, person.id) ? 'Enter a reason when returning or disapproving the request.' : '';
   }
 });
 app.addEventListener('input', e => {
@@ -1310,6 +1312,7 @@ app.addEventListener('submit', async event => {
       if (form.id === 'admin-form') {
         values.branch_ids = formData.getAll('branch_ids');
         if (!values.branch_ids.length) throw new Error('Choose at least one branch.');
+        values.can_override_approval = ['supervisor', 'hrd'].includes(values.role) && form.elements.can_override_approval.checked;
       }
       const account = await adminAccounts(values);
       adminDirty = false;
@@ -1328,9 +1331,15 @@ app.addEventListener('submit', async event => {
       const row = await submit({ id: pendingId, form: values, version: edit?.version });
       await openRecord(row.id, screenOrigin, edit ? 'Request resubmitted to the supervisor.' : 'Request submitted to the supervisor.');
     } else if (form.id === 'decision-form') {
-      const row = await decide({ id: detail.row.id, version: detail.row.version, decision: values.decision, note: values.note });
+      const request = detail.row;
+      const save = () => decide({ id: request.id, version: request.version, decision: values.decision, note: values.note });
+      const override = values.decision === 'override';
+      const row = override ? (await optionDialog('Approve with override?', `<p id="option-dialog-description">
+        This finalizes the PRF and skips ${escape(skippedApproval(request, person.id))} approval. Your reason will appear in the request timeline.
+        </p>${optionDialogFooter('override', 'Approve with override', 'check')}`, form.elements.decision, { save }))?.value : await save();
+      if (!row) return;
       void refreshApprovalCount(true);
-      await openRecord(row.id, screenOrigin, 'Decision recorded.');
+      await openRecord(row.id, screenOrigin, override ? 'Approval override recorded.' : 'Decision recorded.');
     }
   } catch (err) {
     banner(err.message, true);

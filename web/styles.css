@@ -165,15 +165,14 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
 label.field{display:flex;flex-direction:column;gap:.33rem;font-size:.93rem;font-weight:700;min-width:0}
 .field>input,.field>textarea,.field>select{width:100%;font-weight:400;font-size:1rem}
 .field small{color:var(--muted);font-weight:400}
-.request-option{min-width:0}
-.option-toggle{margin-top:.35rem;cursor:pointer;font-size:.82rem}
-.option-toggle::-webkit-details-marker{display:none}
-.option-toggle .icon{width:16px;height:16px}
-.request-option details[open] .option-toggle{margin-bottom:.5rem}
-.request-option details[open] .option-toggle .icon{transform:rotate(45deg)}
-.option-editor{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:.5rem}
-.option-error{color:#8b3030}
-.option-error:not(:empty){margin-top:.45rem}
+.request-option{min-width:0;display:grid;align-content:start;gap:.33rem}
+.request-option-label{font-size:.93rem;font-weight:700}
+.request-option-row{display:flex;align-items:stretch;gap:.38rem;min-width:0}
+.request-option-choice{flex:1;min-width:0}
+.request-option-choice>select{width:100%;min-height:46px;font-size:1rem}
+.request-option-add{flex:none;min-width:4.65rem;padding-inline:.65rem;gap:.28rem;background:#e6f1eb;color:var(--green);border-color:#adc9b8;font-size:.85rem}
+.request-option-add .icon{width:17px;height:17px}
+.request-option-add:hover,.request-option-add:focus-visible{background:#d7eade;border-color:#689d81}
 textarea{resize:vertical}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem}
 .back{margin-bottom:.85rem}
@@ -247,6 +246,9 @@ textarea{resize:vertical}
 .branch-checklist legend{padding-inline:.2rem;font-weight:700;font-size:.93rem}
 .branch-check{min-height:44px;display:flex;align-items:center;gap:.55rem;overflow-wrap:anywhere}
 .branch-check input[type=checkbox]{width:19px;height:19px;min-height:0;margin:0;flex:none;accent-color:var(--green)}
+.approval-override-control{padding:.55rem .7rem;border:1px solid var(--line);border-radius:9px;background:#f7faf8;cursor:pointer}
+.approval-override-control[hidden]{display:none}
+.approval-override-control small{display:block;color:var(--muted)}
 .option-directory{max-width:49rem}
 .option-rows{list-style:none;margin:1rem 0 0;padding:0;border-top:1px solid var(--line)}
 .option-entry{display:flex;align-items:flex-start;flex-wrap:wrap;gap:.4rem;padding:.7rem 0;border-bottom:1px solid var(--line)}
@@ -274,6 +276,7 @@ textarea{resize:vertical}
 .option-sheet-actions{display:grid;gap:.35rem}
 .option-sheet-actions .button{justify-content:flex-start}
 .option-dialog-error{color:#902f30}
+.option-rename-fields .option-dialog-error:not(:empty){margin-top:.45rem}
 .option-dialog-error:empty{display:none}
 .option-confirm-delete{background:#922f30;color:white}
 .option-confirm-delete:hover{background:#762326}
