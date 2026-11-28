@@ -43,7 +43,7 @@ h1[tabindex="-1"]:focus{outline:none}
 .account-avatar{width:29px;height:29px}
 .avatar{display:grid;place-items:center;border-radius:50%;background:#dcebe3;color:#13523d;width:36px;height:36px;font-size:.8rem;font-weight:750;flex:none}
 .avatar img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
-.account select{min-height:40px;max-width:100%;background:#fff}
+.account select{font-size:1rem}
 .demo-tag{color:#225e46;background:#e0efe6;border-radius:99px;padding:.25rem .6rem;font-size:.78rem;font-weight:750}
 .heading{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:1rem;margin-bottom:1.35rem}
 .heading>div{min-width:0}
@@ -104,11 +104,6 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
 .select-menu [role=option].active,.select-menu [role=option]:hover{background:#edf5ef}
 .select-menu [aria-selected=true]{color:#125440;font-weight:800}
 .select-message:not(:empty){padding:.35rem .55rem;color:var(--muted)}
-.account .search-select{width:clamp(8.75rem,40vw,10rem);max-width:100%}
-.account .select-value{white-space:nowrap}
-.account .select-menu{right:-1px;left:auto}
-.print-choice .search-select{flex:none;width:7.55rem}
-.print-choice .select-value{white-space:nowrap}
 .data-table,.data-table tbody{display:block;width:100%}
 .data-table{border-collapse:collapse;font-size:.875rem;line-height:1.35}
 .data-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
@@ -197,6 +192,7 @@ textarea{resize:vertical}
 .decision{margin-top:1rem}
 .decision .actions{margin-top:.75rem}
 .print-choice{display:flex;align-items:center;gap:.5rem}
+.print-choice select{flex:none;min-width:5.5rem;font-size:1rem}
 .login{min-height:100dvh;display:grid;place-items:center;padding:1rem;background:#edf2ef}
 .login-shell{width:min(100%,46rem);display:grid;background:#fff;border:1px solid #d8e3dc;border-radius:15px;overflow:hidden;box-shadow:0 18px 50px #113f3010}
 .login-masthead{display:flex;align-items:flex-end;background:linear-gradient(145deg,#12483c,#1a6e55);padding:1.2rem;color:#fff}

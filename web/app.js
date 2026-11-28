@@ -248,7 +248,7 @@ const statusOptions = { '': 'All statuses', active: 'In review', ...statuses };
 const densityButton = () => button('density', 'Compact', 'secondary density', 'compact', `aria-pressed="${compact}"`);
 function pagination() {
   return `<nav class="pagination" aria-label="Request pagination" hidden>
-    <label class="page-size"><span>Rows<span class="page-label-extra"> per page</span></span> <select id="rows-per-page" data-native-select>${pageSizes.map(size =>
+    <label class="page-size"><span>Rows<span class="page-label-extra"> per page</span></span> <select id="rows-per-page">${pageSizes.map(size =>
       `<option value="${size}" ${rowsPerPage === size ? 'selected' : ''}>${size}</option>`).join('')}</select></label>
     <div class="page-navigation"><span id="row-range" role="status"></span>
       ${button('previous', '', 'secondary page-step', 'previous', 'aria-label="Previous page" title="Previous page" disabled')}
@@ -275,12 +275,12 @@ function listView() {
     <section class="panel register ${inbox ? 'register-inbox' : ''}" aria-label="${inbox ? 'Assigned requests' : 'Request history'}">
       <header class="panel-header">
       <div class="filters"><label class="search">${icon('search')}<input id="search" type="search" maxlength="80" aria-label="Search requests" placeholder="Search requests" value="${escape(search)}"></label>
-      ${inbox ? `<select id="filter" data-native-select aria-label="Approval inbox view">
+      ${inbox ? `<select id="filter" aria-label="Approval inbox view">
         <option value="">Awaiting my decision</option><option value="assigned" ${filter === 'assigned' ? 'selected' : ''}>All assigned requests</option>
-      </select><select id="inbox-status" data-native-select aria-label="Approval inbox status">
+      </select><select id="inbox-status" aria-label="Approval inbox status">
         <option value="">All statuses</option>${Object.entries(statuses).map(([value, label]) =>
           `<option value="${value}" ${value === inboxStatus ? 'selected' : ''}>${label}</option>`).join('')}
-      </select>` : `<select id="filter" data-native-select aria-label="Filter by status">${Object.entries(statusOptions).map(([v, l]) =>
+      </select>` : `<select id="filter" aria-label="Filter by status">${Object.entries(statusOptions).map(([v, l]) =>
         `<option value="${v}" ${v === filter ? 'selected' : ''}>${l}</option>`).join('')}</select>`}
       </div>${densityButton()}</header>
       <div id="request-list"><p class="empty" role="status">Loading requests…</p></div>
@@ -437,7 +437,7 @@ function renderAccountForm(account, approvers, branches, branchField) {
     const options = approvers.filter(p => p.account_role === role && p.id !== current.id);
     const previous = current[name] && !options.some(p => p.id === current[name])
       ? `<option value="${escape(current[name])}" selected>Current approver unavailable</option>` : '';
-    return field(name, label, `<select name="${name}">
+    return field(name, label, `<select name="${name}" data-search-select>
       <option value="">Choose an approver</option>${previous}
       ${options.map(p => `<option value="${escape(p.id)}" ${selected(name, p.id)}>${escape(p.name)}</option>`).join('')}
     </select>`);
@@ -554,7 +554,7 @@ function requestOptionField(kind, label, addLabel, names, selected) {
   const id = `request-option-${kind}`;
   return `<div class="request-option" data-option="${kind}">
     <label class="field" for="${id}">${label}
-      <select name="${kind}" id="${id}" ${kind === 'branch' ? 'data-native-select' : ''} required><option value="">Select an option</option>
+      <select name="${kind}" id="${id}"${kind === 'branch' ? '' : ' data-search-select'} required><option value="">Select an option</option>
         ${choices.map(name => `<option value="${escape(name)}" ${name === selectedName ? 'selected' : ''}>${escape(name)}</option>`).join('')}
       </select>
     </label>

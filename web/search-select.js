@@ -5,7 +5,7 @@ window.visualViewport?.addEventListener('resize', () => fitOpenMenu?.());
 window.visualViewport?.addEventListener('scroll', () => fitOpenMenu?.());
 
 export function enhanceSelects(root) {
-  for (const select of root.querySelectorAll('select:not([data-native-select])')) {
+  for (const select of root.querySelectorAll('select[data-search-select]')) {
     const id = `select-search-${++nextId}`;
     const labels = [...select.labels];
     const name = select.getAttribute('aria-label') || labels.map(label => {
