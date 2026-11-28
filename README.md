@@ -15,6 +15,10 @@ PUBLIC_DEMO=true npm run dev
 
 Open http://127.0.0.1:4173. Set `PUBLIC_DEMO=true` only for sample builds.
 
+## Searchable dropdowns
+
+Use the shared `data-search-select` control for searchable directories. Choosing an option by touch, mouse, or keyboard closes the list and locks the displayed value. The **×** button beside the selection clears it and returns focus to the search field. Only a chosen option is saved. Keep fixed-choice dropdowns native.
+
 ## Approval and paper defaults
 
 - The super admin assigns branches to supervisors and HRD. In **Users**, supervisors and HRD can change employee branch membership within their own branches. Assignments outside their scope stay in place.

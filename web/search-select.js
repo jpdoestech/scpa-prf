@@ -22,17 +22,24 @@ export function enhanceSelects(root) {
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
       </button>
+      <button type="button" class="select-toggle select-clear" hidden>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
       <div class="select-menu" hidden><div id="${id}-list" role="listbox"></div>
         <p role="status" class="select-message"></p></div>`;
     const input = control.querySelector('input');
     const selectedLabel = control.querySelector('.select-value');
-    const toggle = control.querySelector('button');
+    const toggle = control.querySelector('.select-toggle');
+    const clear = control.querySelector('.select-clear');
     const menu = control.querySelector('.select-menu');
     const list = control.querySelector('[role="listbox"]');
     const message = control.querySelector('[role="status"]');
     input.setAttribute('aria-label', name);
     list.setAttribute('aria-label', name);
     toggle.setAttribute('aria-label', `Show ${name.toLowerCase()} options`);
+    clear.setAttribute('aria-label', `Clear ${name.toLowerCase()}`);
+    clear.title = clear.getAttribute('aria-label');
     for (const label of labels) label.htmlFor = id;
     select.after(control);
     select.hidden = true;
@@ -42,11 +49,14 @@ export function enhanceSelects(root) {
     let active = -1;
 
     function sync() {
-      const label = select.selectedOptions[0]?.label ?? '';
-      input.value = !select.required || select.value ? label : '';
-      input.placeholder = select.required && !select.value ? label : 'Select an option';
-      selectedLabel.textContent = input.value || input.placeholder;
-      selectedLabel.classList.toggle('is-placeholder', !input.value);
+      const chosen = Boolean(select.value);
+      input.readOnly = chosen;
+      input.value = chosen ? select.selectedOptions[0].label : '';
+      input.placeholder = [...select.options].find(option => !option.value)?.label || 'Select an option';
+      selectedLabel.textContent = chosen ? input.value : input.placeholder;
+      selectedLabel.classList.toggle('is-placeholder', !chosen);
+      toggle.hidden = chosen;
+      clear.hidden = !chosen;
       if (select.validity.valid) input.removeAttribute('aria-invalid');
     }
 
@@ -79,8 +89,8 @@ export function enhanceSelects(root) {
 
     function render(query = '') {
       const term = query.trim().toLowerCase();
-      matches = [...select.options].filter(option => !option.disabled && !option.hidden
-        && (!select.required || option.value) && option.label.toLowerCase().includes(term));
+      matches = [...select.options].filter(option => option.value && !option.disabled && !option.hidden
+        && option.label.toLowerCase().includes(term));
       list.replaceChildren(...matches.map((option, index) => {
         const item = document.createElement('div');
         item.id = `${id}-option-${index}`;
@@ -98,7 +108,7 @@ export function enhanceSelects(root) {
     }
 
     function open() {
-      if (!menu.hidden) return;
+      if (input.readOnly || !menu.hidden) return;
       control.classList.add('is-open');
       menu.hidden = false;
       input.setAttribute('aria-expanded', 'true');
@@ -116,11 +126,9 @@ export function enhanceSelects(root) {
       sync();
     }
 
-    function choose(index) {
-      const option = matches[index];
-      if (!option) return;
-      const changed = !option.selected;
-      select.selectedIndex = option.index;
+    function setValue(value) {
+      const changed = select.value !== value;
+      select.value = value;
       close();
       if (changed) {
         select.dispatchEvent(new Event('input', { bubbles: true }));
@@ -128,23 +136,31 @@ export function enhanceSelects(root) {
       }
     }
 
+    function choose(index) {
+      const option = matches[index];
+      if (input.readOnly || !option) return;
+      setValue(option.value);
+      clear.focus({ preventScroll: true });
+    }
+
     sync();
     input.addEventListener('focus', () => {
       if (select.required) input.setAttribute('aria-required', 'true');
       else input.removeAttribute('aria-required');
-      input.select();
+      if (!input.readOnly) input.select();
     });
     input.addEventListener('click', () => {
-      if (!menu.hidden) return;
+      if (input.readOnly || !menu.hidden) return;
       open();
       input.select();
     });
     input.addEventListener('input', () => {
+      if (input.readOnly) return;
       open();
       render(input.value);
     });
     input.addEventListener('keydown', event => {
-      if (event.isComposing) return;
+      if (event.isComposing || input.readOnly) return;
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         if (menu.hidden) {
@@ -173,10 +189,19 @@ export function enhanceSelects(root) {
         input.select();
       } else close();
     });
+    clear.addEventListener('click', event => {
+      event.preventDefault();
+      setValue('');
+      input.focus({ preventScroll: true });
+      open();
+    });
     list.addEventListener('mousedown', event => event.preventDefault());
     list.addEventListener('click', event => {
       const item = event.target.closest('[data-index]');
-      if (item) choose(Number(item.dataset.index));
+      if (item) {
+        event.preventDefault();
+        choose(Number(item.dataset.index));
+      }
     });
     select.addEventListener('change', close);
     select.addEventListener('invalid', event => {

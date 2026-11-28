@@ -97,6 +97,8 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
 .select-toggle{grid-column:2;grid-row:1;min-width:44px;min-height:44px;border:0;border-radius:0 8px 8px 0;background:transparent;color:#315d4a;padding:0}
 .select-toggle:hover{background:#edf5ef}
 .select-toggle .icon{width:16px;height:16px}
+.select-clear{color:var(--muted)}
+.select-clear:focus-visible{outline-offset:-3px}
 .is-open .select-toggle .icon{transform:rotate(180deg)}
 .select-menu{position:absolute;top:calc(100% + 5px);left:-1px;width:calc(100% + 2px);overflow:auto;overscroll-behavior:contain;background:#fff;border:1px solid #a9c2b4;border-radius:9px;padding:.24rem;box-shadow:0 8px 24px #143c2a24;color:#20372d;font-size:.88rem;font-weight:600;text-align:left}
 .select-menu-up{top:auto;bottom:calc(100% + 5px)}
