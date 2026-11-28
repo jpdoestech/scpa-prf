@@ -34,16 +34,19 @@ export function approvalTime(value, spaceBeforePeriod = false) {
   return `${day(date)} | ${parts.hour}:${parts.minute}${spaceBeforePeriod ? ' ' : ''}${parts.dayPeriod.toLowerCase()}`;
 }
 export const prfNumber = row => row.number ?? 'Not yet issued';
+const hasApprover = (r, stage, id) => r[`${stage}_ids`]?.includes(id) ?? (r[`${stage}_id`] === id);
 export const canDecide = (r, id) =>
-  (r.status === 'supervisor' && r.supervisor_id === id) || (r.status === 'hrd' && r.hrd_id === id);
+  (r.status === 'supervisor' || r.status === 'hrd') && hasApprover(r, r.status, id);
 export const skippedApproval = (r, id) => {
   if (r.requester_id === id) return '';
-  if (r.supervisor_id === id && ['supervisor', 'hrd'].includes(r.status)) return 'HRD';
-  if (r.hrd_id === id && r.status === 'supervisor') return 'Supervisor';
+  if (hasApprover(r, 'supervisor', id) && ['supervisor', 'hrd'].includes(r.status)) return 'HRD';
+  if (hasApprover(r, 'hrd', id) && r.status === 'supervisor') return 'Supervisor';
   return '';
 };
 export const nextActor = r => ({
-  supervisor: r.supervisor_name, hrd: r.hrd_name, returned: r.requester_name,
+  supervisor: r.supervisor_ids?.length > 1 ? `one of ${r.supervisor_ids.length} assigned supervisors` : r.supervisor_name,
+  hrd: r.hrd_ids?.length > 1 ? `one of ${r.hrd_ids.length} assigned HRD approvers` : r.hrd_name,
+  returned: r.requester_name,
 })[r.status] ?? '';
 export const eventTitle = e => {
   if (e.action === 'submitted') return 'Request submitted';

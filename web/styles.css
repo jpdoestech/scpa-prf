@@ -258,8 +258,13 @@ textarea{resize:vertical}
 .option-tab:hover{background:#edf5ef}
 .option-tab[aria-selected=true]{color:var(--deep);background:#e6f1eb}
 .option-tab[aria-selected=true]::after{content:"";position:absolute;inset:auto .35rem 0;height:3px;border-radius:4px 4px 0 0;background:var(--green)}
-.branch-checklist{grid-column:1/-1;min-width:0;margin:0;padding:.3rem .65rem;border:1px solid var(--line);border-radius:9px;display:grid;gap:.1rem}
-.branch-checklist legend{padding-inline:.2rem;font-weight:700;font-size:.93rem}
+.assignment-picker{min-width:0;border:1px solid #c8d7ce;border-radius:9px;background:#fff}
+.assignment-picker summary{display:flex;align-items:center;gap:.5rem;min-height:44px;padding:.5rem .7rem;cursor:pointer;list-style:none;font-size:.88rem}
+.assignment-picker summary::-webkit-details-marker{display:none}
+.assignment-picker summary::after{content:"";width:.42rem;height:.42rem;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin:0 .15rem .18rem .08rem;flex:none}
+.assignment-picker[open] summary::after{transform:rotate(225deg);margin-block:.18rem 0}
+.assignment-picker [data-assignment-count]{margin-inline-start:auto;color:var(--muted);white-space:nowrap}
+.assignment-checklist{min-width:0;margin:0;padding:.15rem .7rem;border:0;border-top:1px solid var(--line);max-height:15rem;overflow:auto;overscroll-behavior:contain}
 .branch-check{min-height:44px;display:flex;align-items:center;gap:.55rem;overflow-wrap:anywhere}
 .branch-check input[type=checkbox]{width:19px;height:19px;min-height:0;margin:0;flex:none;accent-color:var(--green)}
 .approval-override-control{padding:.55rem .7rem;border:1px solid var(--line);border-radius:9px;background:#f7faf8;cursor:pointer}

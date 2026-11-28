@@ -184,11 +184,13 @@ export async function saveEmployeeBranches(id, branches) {
 }
 
 function approvalScope(query, id, view) {
+  const supervisor = `supervisor_ids.cs.{${id}}`;
+  const hrd = `hrd_ids.cs.{${id}}`;
   if (view === 'override') return query.neq('requester_id', id).or(
-    `and(status.in.(supervisor,hrd),supervisor_id.eq.${id}),and(status.eq.supervisor,hrd_id.eq.${id})`);
+    `and(status.in.(supervisor,hrd),${supervisor}),and(status.eq.supervisor,${hrd})`);
   return query.or(view === 'assigned'
-    ? `supervisor_id.eq.${id},hrd_id.eq.${id}`
-    : `and(status.eq.supervisor,supervisor_id.eq.${id}),and(status.eq.hrd,hrd_id.eq.${id})`);
+    ? `${supervisor},${hrd}`
+    : `and(status.eq.supervisor,${supervisor}),and(status.eq.hrd,${hrd})`);
 }
 
 export async function pendingApprovals(id) {

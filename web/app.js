@@ -410,13 +410,20 @@ function renderUserRows(term = '') {
   }).join('') : `<tr class="empty-row" role="row"><td class="empty" role="cell" colspan="${person.superAdmin ? 5 : 3}">No accounts match your search.</td></tr>`;
 }
 
+function assignmentChecklist(name, label, options, assigned, wide = '') {
+  return `<details name="profile-assignments" class="assignment-picker ${wide}">
+    <summary><strong>${escape(label)}</strong><span data-assignment-count>${assigned.length} selected</span></summary>
+    <fieldset aria-label="${escape(label)}" class="assignment-checklist">
+      ${options.length ? options.map(option => `<label class="branch-check">
+        <input type="checkbox" name="${name}" value="${escape(option.id)}" ${assigned.includes(option.id) ? 'checked' : ''}>
+        <span>${escape(option.name)}${option.active === false ? ' (inactive)' : ''}</span>
+      </label>`).join('') : '<p class="muted small">No options available.</p>'}
+    </fieldset></details>`;
+}
+
 function branchCheckboxes(branches, assigned) {
-  const options = branches.filter(branch => branch.active !== false || assigned.includes(branch.id));
-  return `<fieldset class="branch-checklist"><legend>Assigned branches</legend>
-    ${options.length ? options.map(branch => `<label class="branch-check">
-      <input type="checkbox" name="branch_ids" value="${escape(branch.id)}" ${assigned.includes(branch.id) ? 'checked' : ''}>
-      <span>${escape(branch.name)}${branch.active === false ? ' (inactive)' : ''}</span>
-    </label>`).join('') : '<p class="muted small">No branches available.</p>'}</fieldset>`;
+  return assignmentChecklist('branch_ids', 'Assigned branches',
+    branches.filter(branch => branch.active !== false || assigned.includes(branch.id)), assigned, 'wide');
 }
 
 function renderEmployeeBranches(account, branches) {
@@ -435,14 +442,15 @@ function renderAccountForm(account, approvers, branches, branchField) {
   const current = account ?? {};
   const assigned = current.branch_ids ?? (current[branchField] ? [current[branchField]] : []);
   const selected = (key, value) => current[key] === value ? 'selected' : '';
-  const approver = (name, label, role) => {
-    const options = approvers.filter(p => p.account_role === role && p.id !== current.id);
-    const previous = current[name] && !options.some(p => p.id === current[name])
-      ? `<option value="${escape(current[name])}" selected>Current approver unavailable</option>` : '';
-    return field(name, label, `<select name="${name}" data-search-select>
-      <option value="">Choose an approver</option>${previous}
-      ${options.map(p => `<option value="${escape(p.id)}" ${selected(name, p.id)}>${escape(p.name)}</option>`).join('')}
-    </select>`);
+  const approver = (label, role) => {
+    const name = `${role}_ids`;
+    const previous = current[name] ?? (current[`${role}_id`] ? [current[`${role}_id`]] : []);
+    const options = approvers.filter(p => p.account_role === role && p.id !== current.id)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const id of previous) {
+      if (!options.some(option => option.id === id)) options.push({ id, name: 'Previously assigned approver (unavailable)' });
+    }
+    return assignmentChecklist(name, label, options, previous);
   };
   const password = label => field('account-password', label,
     '<input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="72" required><small>Use at least 12 characters. Share the password privately.</small>', 'wide');
@@ -465,8 +473,9 @@ function renderAccountForm(account, approvers, branches, branchField) {
             <input type="checkbox" name="can_override_approval" ${current.can_override_approval ? 'checked' : ''}>
             <span><strong>Allow approval override</strong><small>Can skip the other approval step on assigned PRFs. A reason is required.</small></span>
           </label>
-          ${approver('supervisor_id', 'Assigned supervisor', 'supervisor')}
-          ${approver('hrd_id', 'Assigned HRD approver', 'hrd')}
+          ${approver('Assigned supervisors', 'supervisor')}
+          ${approver('Assigned HRD approvers', 'hrd')}
+          <p class="muted small wide">One assigned approver per stage can act within the request’s branch.</p>
           ${creating ? password('Initial password') : ''}
         </div><div class="actions">${creating ? submitButton('Create account', 'plus') : submitButton('Save changes', 'check')}</div>
       </form></section>
@@ -1061,7 +1070,11 @@ async function start() {
 
 app.addEventListener('change', async e => {
   const target = e.target;
-  if (target.form?.id === 'prf-record-filter' && target.name === 'period') {
+  const checklist = target.closest('.assignment-checklist');
+  if (checklist) {
+    const count = checklist.querySelectorAll('input:checked').length;
+    checklist.parentElement.querySelector('[data-assignment-count]').textContent = `${count} selected`;
+  } else if (target.form?.id === 'prf-record-filter' && target.name === 'period') {
     document.getElementById('prf-period-field').innerHTML = prfPeriodField(target.value);
   } else if (target.name === 'prf-record') {
     app.querySelector('[data-action="delete-prf-selected"]').disabled = !app.querySelector('input[name="prf-record"]:checked');
@@ -1434,6 +1447,8 @@ app.addEventListener('submit', async event => {
       if (form.id === 'admin-form') {
         values.branch_ids = formData.getAll('branch_ids');
         if (!values.branch_ids.length) throw new Error('Choose at least one branch.');
+        values.supervisor_ids = formData.getAll('supervisor_ids');
+        values.hrd_ids = formData.getAll('hrd_ids');
         values.can_override_approval = ['supervisor', 'hrd'].includes(values.role) && form.elements.can_override_approval.checked;
       }
       const account = await adminAccounts(values);
