@@ -3,7 +3,7 @@ import {
   optionDirectory, editRequestOption, addRequestOption, submit, decide, setDemoRole, currentDemoRole,
   pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto, employeeDirectory, saveEmployeeBranches,
 } from './data.js';
-import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, day, dateTime, approvalTime, prfNumber } from './model.js';
+import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, correctionHistory, day, dateTime, approvalTime, prfNumber } from './model.js';
 import { preparePrintImage, drawPrintImage, preparePrint, stampPrint } from './print.js';
 import { enhanceSelects, focusSelect } from './search-select.js';
 
@@ -696,9 +696,15 @@ function detailView() {
         ${fieldEntry('HRD approved', approvalTime(r.hrd_at))}
       </dl></section>
       <section class="panel panel-content"><h2>Request timeline</h2>
-      <ol class="timeline">${events.map(e => `<li><strong>${escape(eventTitle(e))}</strong>
-        <p class="muted small">${escape(e.actor_name)} · ${escape(dateTime(e.occurred_at))}</p>
-        ${e.note ? `<p>${escape(e.note)}</p>` : ''}</li>`).join('')}</ol></section>
+      <ol class="timeline">${events.map(e => {
+        const changes = correctionHistory(e);
+        return `<li><strong>${escape(eventTitle(e))}</strong>
+          <p class="muted small">${escape(e.actor_name)} · ${escape(dateTime(e.occurred_at))}</p>
+          ${e.note ? `<p>${escape(e.note)}</p>` : ''}
+          ${changes.length ? `<dl class="timeline-changes">${changes.map(({ label, from, to }) => `<div>
+            <dt>${escape(label)}</dt><dd><b>From</b><span>${escape(from)}</span></dd><dd><b>To</b><span>${escape(to)}</span></dd>
+          </div>`).join('')}</dl>` : ''}</li>`;
+      }).join('')}</ol></section>
     </div>
     ${decision ? `<section class="panel panel-content decision"><h2>Review request</h2>
       <form id="decision-form" class="decision">

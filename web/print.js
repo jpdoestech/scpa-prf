@@ -1,4 +1,4 @@
-import { approvalTime, day, eventTitle, prfNumber } from './model.js';
+import { approvalTime, correctionHistory, day, eventTitle, prfNumber } from './model.js';
 
 const template = './assets/scpa-prf-template.png';
 const svgNS = 'http://www.w3.org/2000/svg';
@@ -153,6 +153,9 @@ export async function preparePrint(row, paper, events) {
   for (const event of events) {
     const note = event.note?.trim();
     supplement.append(paragraph(`${approvalTime(event.occurred_at)} PHT · ${eventTitle(event)} · ${event.actor_name}${note ? ` — ${note}` : ''}`));
+    for (const { label, from, to } of correctionHistory(event)) {
+      supplement.append(paragraph(`${label}\nFrom  ${from}\nTo  ${to}`));
+    }
   }
   root.append(supplement);
   return { picture, svg, extra, supplement, stamp, paperWidth, paperHeight };

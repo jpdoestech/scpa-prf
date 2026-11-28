@@ -44,3 +44,24 @@ export const eventTitle = e => {
   if (e.action === 'resubmitted') return 'Request resubmitted';
   return `${e.stage === 'hrd' ? 'HRD' : 'Supervisor'} ${e.action === 'returned' ? 'returned for correction' : e.action}`;
 };
+
+const correctionFields = {
+  requester_name: 'Requested by', branch_name: 'Branch / office', position: 'Position title',
+  area: 'Assigned area / store', needed: 'Date needed', headcount: 'Headcount',
+  service: 'Service time frame', service_other: 'Service time frame details', assignment: 'Work assignment',
+  schedule: 'Work schedule', requisition: 'Requisition type', reason: 'Requisition details',
+  qualifications: 'Qualifications', salary: 'Proposed salary', allowance: 'Allowance',
+};
+const correctionChoices = { service: services, assignment: assignments, requisition: requisitions };
+
+export function correctionHistory(event) {
+  const format = (key, value) => {
+    if (!value) return 'Not entered';
+    if (key === 'needed') return day(value);
+    return correctionChoices[key]?.[value] ?? value;
+  };
+  return Object.entries(correctionFields).flatMap(([key, label]) => {
+    const change = event.changes?.[key];
+    return change ? [{ label, from: format(key, change.from), to: format(key, change.to) }] : [];
+  });
+}

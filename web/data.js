@@ -278,9 +278,19 @@ export async function submit({ id, form, version }) {
     demoRows.unshift(row);
   }
   const { branch, ...details } = form;
+  const changes = {};
+  if (action === 'resubmitted') {
+    const before = { ...row.form, branch_name: row.branch_name };
+    const after = { ...details, branch_name: branch || row.branch_name };
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      const from = before[key] ?? '';
+      const to = after[key] ?? '';
+      if (from !== to) changes[key] = { from, to };
+    }
+  }
   if (branch) row.branch_name = branch;
   Object.assign(row, { form: details, status: 'supervisor', version: row.version + 1, updated_at: at, supervisor_at: null, hrd_at: null });
-  row.events.push({ action, actor_name: demoPeople[demoRole].name, stage: 'requester', occurred_at: at });
+  row.events.push({ action, actor_name: demoPeople[demoRole].name, stage: 'requester', occurred_at: at, changes });
   saveDemo();
   return row;
 }

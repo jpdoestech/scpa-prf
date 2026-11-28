@@ -34,6 +34,8 @@ Open http://127.0.0.1:4173. Set `PUBLIC_DEMO=true` only for sample builds.
 
 Employees follow updates in **My requests**. Supervisors and HRD check **Approval inbox** for requests awaiting a decision. The browser only reads requests and timelines it is allowed to see. PostgreSQL functions validate mutations, enforce stage order, and record a delivery item in the same transaction as the action.
 
+When an employee resubmits a returned PRF, the timeline shows the **From** and **To** values for each changed field. The same history appears in the print and export preview.
+
 The **Approval inbox** badge counts requests currently awaiting your decision, across all inbox views. Use the separate status filter to find requests assigned to you at either review stage or with an Approved, Returned, or Disapproved outcome. **Compact** controls table and pagination density. The request tables remember your page size and density in the current browser.
 
 Open **My account** from your profile button to update your display name, profile picture, or password. Password changes require your current password. The sign-in email is displayed for reference.
