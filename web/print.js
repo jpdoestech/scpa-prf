@@ -46,6 +46,14 @@ function wrapText(context, value, width, firstWidth = width) {
   return lines;
 }
 
+function remarkLines(context, value, width) {
+  const enteredLines = value.split(/\r\n?|\n/).filter(line => line.trim());
+  const indent = enteredLines.length > 1 ? 12 : 0;
+  return enteredLines.flatMap(enteredLine =>
+    wrapText(context, enteredLine, width - indent)
+      .map((line, index) => ({ line, indent, bullet: indent > 0 && index === 0 })));
+}
+
 async function embeddedImage(asset) {
   const picture = new Image();
   picture.src = asset;
@@ -89,6 +97,9 @@ function formSection(context, name, draw, family = sans) {
   function rule(x, y, width, stroke = '#7c7c7c') {
     add('line', { x1: x, x2: x + width, y1: y, y2: y, stroke, 'stroke-width': .7 });
   }
+  function bullet(x, y) {
+    add('circle', { cx: x + 3, cy: y - 3, r: 1.7, fill: '#111' });
+  }
   function field(label, value, x, y, width) {
     text(label, x, y, 9, 'bold');
     context.font = '10.5px ' + family;
@@ -115,7 +126,7 @@ function formSection(context, name, draw, family = sans) {
     }
     return y + 12;
   }
-  const height = draw({ add, text, rule, field, fields, choices });
+  const height = draw({ add, text, rule, bullet, field, fields, choices });
   svg.setAttribute('viewBox', '0 0 ' + formWidth + ' ' + height);
   return { svg, height };
 }
@@ -249,7 +260,7 @@ async function wrappedForm(row) {
       y = fields(y, ['Requested personnel position title', f.position], ['Date needed', neededDateRange(f)]);
       return fields(y, ['Assigned area / store', f.area], ['No. of personnel requested', f.headcount]);
     }),
-    section('Service time frame and work assignment', ({ add, choices, field }) => {
+    section('Service time frame and work assignment', ({ add, text, bullet, choices, field }) => {
       const left = leftColumn;
       const right = rightColumn;
       let serviceY = choices('Service time frame', services, f.service, left.x, 11);
@@ -260,7 +271,16 @@ async function wrappedForm(row) {
       if (f.assignment_remarks) {
         const indent = 15;
         add('path', { d: `M${right.x} ${assignmentY - 8}v7h9m-3-3 3 3-3 3`, fill: 'none', stroke: '#444', 'stroke-width': 1.2 });
-        assignmentY = field('Detailed work assignment', f.assignment_remarks, right.x + indent, assignmentY, right.width - indent);
+        const x = right.x + indent;
+        text('Detailed work assignment', x, assignmentY, 9, 'bold');
+        context.font = '10.5px ' + serif;
+        // Leave room for small differences between SVG and canvas font measurements.
+        for (const entry of remarkLines(context, f.assignment_remarks, right.width - indent - 12)) {
+          assignmentY += 12;
+          if (entry.bullet) bullet(x, assignmentY);
+          text(entry.line, x + entry.indent, assignmentY, 10.5);
+        }
+        assignmentY += 12;
       }
       return Math.max(serviceY, assignmentY);
     }),
@@ -325,12 +345,7 @@ function postApprovalSections(otherDetails, assignment, events, wrapped) {
 
   if (split) {
     right.entries.push({ line: 'Detailed work assignment', heading: true });
-    const enteredLines = assignment.split(/\r\n?|\n/).filter(line => line.trim());
-    const indent = enteredLines.length > 1 ? 12 : 0;
-    for (const enteredLine of enteredLines) {
-      const lines = wrapText(context, enteredLine, right.end - right.x - indent);
-      right.entries.push(...lines.map((line, index) => ({ line, indent, bullet: indent > 0 && index === 0 })));
-    }
+    right.entries.push(...remarkLines(context, assignment, right.end - right.x));
   }
   const stamp = {};
   if (!wrapped) (split ? right : left).entries.push({ stamp: true });
@@ -344,7 +359,7 @@ function postApprovalSections(otherDetails, assignment, events, wrapped) {
       column.start = end;
       return { ...column, notes: entries.slice(start, end) };
     });
-    sections.push(formSection(context, 'Details after approval', ({ add, text }) => {
+    sections.push(formSection(context, 'Details after approval', ({ add, text, bullet }) => {
       const height = 10 + 12 * Math.max(...chunks.map(({ notes }) => notes.length + (split && notes.at(-1)?.stamp ? 1 : 0)));
       if (split && chunks[1].notes.length) {
         add('line', { x1: divider, x2: divider, y1: 2, y2: height - 5, stroke: separatorColor, 'stroke-width': .7 });
@@ -359,9 +374,9 @@ function postApprovalSections(otherDetails, assignment, events, wrapped) {
             Object.assign(stamp, { node: add('g', { 'data-print-stamp': '' }), x, y, width: end - x });
             continue;
           }
-          const { line, heading: bold, timeline, marker, indent = 0, bullet } = entry;
+          const { line, heading: bold, timeline, marker, indent = 0 } = entry;
           if (marker) add('circle', { cx: x + 3, cy: y - 3, r: 2.4, fill: '#235544' });
-          if (bullet) add('circle', { cx: x + 3, cy: y - 3, r: 1.7, fill: '#111' });
+          if (entry.bullet) bullet(x, y);
           text(line, x + (timeline ? 12 : indent), y, timeline && !bold ? 9.5 : 10,
             bold ? 'bold' : 'normal', timeline && !bold ? '#444' : '#111');
           if (entry.metadata) text(entry.metadata, entry.metadataX, y, 9.5, 'normal', '#444');
