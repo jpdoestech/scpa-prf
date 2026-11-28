@@ -282,7 +282,7 @@ function openProfile() {
 }
 
 const groups = ['Total', 'In review', 'Approved', 'Returned / disapproved'];
-const statusOptions = { '': 'All statuses', active: 'In review', ...statuses };
+const statusOptions = Object.fromEntries(Object.entries(statuses).map(([value, label]) => [value, label.replace(/ review$/, '')]));
 const densityButton = () => button('density', 'Compact', 'secondary density', 'compact', `aria-pressed="${compact}"`);
 function pagination() {
   return `<nav class="pagination" aria-label="Request pagination" hidden>
@@ -297,7 +297,7 @@ function pagination() {
 
 function listView() {
   const inbox = screen === 'inbox';
-  renderFrame(`<div class="heading register-heading">
+  renderFrame(`<div class="heading register-heading request-heading">
     <h1 tabindex="-1">${inbox ? 'Approval inbox' : 'My requests'}</h1>
     <div class="actions">${person.canManageOptions ? button('request-options', 'Request options', 'secondary', 'list') : ''}
       ${inbox || person.adminOnly ? '' : button('new', 'New request', 'primary', 'plus')}</div>
@@ -311,17 +311,18 @@ function listView() {
     ${inbox ? '' : `<dl class="stats" aria-label="Request summary">${groups.map((label, i) =>
       `<div class="stat"><dt>${label}</dt><dd id="count-${i}">–</dd></div>`).join('')}</dl>`}
     <section class="panel register ${inbox ? 'register-inbox' : ''}" aria-label="${inbox ? 'Assigned requests' : 'Request history'}">
-      <header class="panel-header">
-      <div class="filters"><label class="search">${icon('search')}<input id="search" type="search" maxlength="80" aria-label="Search requests" placeholder="Search requests" value="${escape(search)}"></label>
+      <header class="panel-header request-toolbar">
+      <label class="search">${icon('search')}<input id="search" type="search" maxlength="80" aria-label="Search requests" placeholder="Search" value="${escape(search)}"></label>
+      ${inbox ? densityButton() : ''}
       ${inbox ? `<select id="filter" aria-label="Approval inbox view">
-        <option value="">Awaiting my decision</option><option value="assigned" ${filter === 'assigned' ? 'selected' : ''}>All assigned requests</option>
-        ${person.canOverrideApproval ? `<option value="override" ${filter === 'override' ? 'selected' : ''}>Eligible for override</option>` : ''}
+        <option value="">My review queue</option><option value="assigned" ${filter === 'assigned' ? 'selected' : ''}>All assigned</option>
+        ${person.canOverrideApproval ? `<option value="override" ${filter === 'override' ? 'selected' : ''}>Can override</option>` : ''}
       </select><select id="inbox-status" aria-label="Approval inbox status">
-        <option value="">All statuses</option>${Object.entries(statuses).map(([value, label]) =>
+        <option value="">All statuses</option>${Object.entries(statusOptions).map(([value, label]) =>
           `<option value="${value}" ${value === inboxStatus ? 'selected' : ''}>${label}</option>`).join('')}
-      </select>` : `<select id="filter" aria-label="Filter by status">${Object.entries(statusOptions).map(([v, l]) =>
-        `<option value="${v}" ${v === filter ? 'selected' : ''}>${l}</option>`).join('')}</select>`}
-      </div>${densityButton()}</header>
+      </select>` : `<select id="filter" aria-label="Filter by status">${Object.entries({ '': 'All statuses', active: 'In review', ...statusOptions }).map(([v, l]) =>
+        `<option value="${v}" ${v === filter ? 'selected' : ''}>${l}</option>`).join('')}</select>${densityButton()}`}
+      </header>
       <div id="request-list"><p class="empty" role="status">Loading requests…</p></div>
       ${pagination()}
     </section>`}`);
@@ -356,8 +357,8 @@ function renderList() {
     <tbody role="rowgroup">${result.rows.map(r => `<tr class="request-row" role="row">
       <td class="record-number" role="cell">${escape(prfNumber(r))}</td>
       <td class="request-identity" role="cell"><strong>${escape(r.form.position)}</strong><small>${escape(screen === 'inbox' ? r.requester_name : r.form.area)}</small></td>
-      ${showRequested ? `<td class="request-submitted" role="cell"><span class="due-label">Requested </span>${escape(approvalTime(r.submitted_at, true))}</td>` : ''}
-      <td class="due" role="cell"><span class="due-label">Needed </span>${escape(neededDateRange(r.form))}</td>
+      ${showRequested ? `<td class="request-submitted" role="cell"><span class="due-label" aria-hidden="true">Requested</span> ${escape(approvalTime(r.submitted_at, true))}</td>` : ''}
+      <td class="due" role="cell"><span class="due-label" aria-hidden="true">Needed</span> ${escape(neededDateRange(r.form))}</td>
       <td class="request-status" role="cell">${badge(r.status)}</td>
       <td class="data-action" role="cell">${button('record', 'Open', 'secondary row-button', 'open',
         `data-id="${escape(r.id)}" aria-label="Open ${r.number ? `${escape(r.number)}, ` : ''}${escape(r.form.position)}"`)}</td>

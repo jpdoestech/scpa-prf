@@ -69,10 +69,10 @@ h1[tabindex="-1"]:focus{outline:none}
 .panel-content{padding:1rem}
 .panel-header{padding:1rem;border-bottom:1px solid var(--line)}
 .panel-header h2{margin-bottom:.65rem}
-.register .panel-header,.users-panel .user-toolbar{display:grid;align-items:center;grid-template-columns:minmax(0,1fr) auto;gap:.5rem;padding:.65rem}
-.register .filters{display:contents}
-.register .search,.user-toolbar-admin .user-search{grid-column:1/-1}
-.register-inbox #filter{grid-column:1/-1}
+.register .request-toolbar,.users-panel .user-toolbar{display:grid;align-items:center;grid-template-columns:minmax(0,1fr) auto;gap:.5rem;padding:.65rem}
+.request-toolbar .search,.user-toolbar-admin .user-search{grid-column:1/-1}
+.register-inbox .search{grid-column:auto}
+.request-toolbar select{width:100%;min-width:0;padding-inline-end:1.7rem;background-position:right .45rem center}
 .density{justify-self:end}
 .search input{font-size:1rem}
 .search input{min-width:0}
@@ -118,10 +118,9 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
 .record-number{font-weight:750;font-size:.8rem;color:#406856;font-variant-numeric:tabular-nums}
 .data-table strong,.data-table small{display:block}
 .data-table small{color:var(--muted);font-size:.8rem}
-.request-identity{grid-column:1/-1;grid-row:2}
-.request-status{grid-column:2;grid-row:1;justify-self:end}
 .request-submitted,.due,.user-branch{color:var(--muted)}
 .request-submitted,.due{font-variant-numeric:tabular-nums}
+.due-label{margin-inline-end:.3rem;color:var(--deep);font-weight:700}
 .row-button .icon,.density .icon{width:16px;height:16px}
 [data-density=compact] .data-table tbody tr{padding:.46rem .7rem;row-gap:.15rem}
 [data-density=compact] .data-table .badge{padding:.16rem .42rem}
@@ -140,20 +139,28 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
 .page-step{padding:0;width:44px}
 [data-density=compact] .pagination{padding:.35rem .65rem}
 @media(max-width:549px){
-  .register .search{grid-column:1}
-  .register #filter{grid-column:1/-1}
-  .register .density{grid-column:2;grid-row:1}
-  .register-inbox #inbox-status{grid-column:1/-1}
   [data-density=compact] .page-label-extra{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 }
 @media(max-width:899px){
-  [data-density=compact] .request-identity{grid-column:1}
-  [data-density=compact] .request-row .due{grid-row:3;grid-column:1}
-  [data-density=compact] .request-row .data-action{grid-row:2/4;grid-column:2}
-  .request-table-with-submitted .request-row .request-submitted{grid-row:3;grid-column:1}
-  .request-table-with-submitted .request-row .due{grid-row:4;grid-column:1}
-  .request-table-with-submitted .request-row .data-action{grid-row:3/5;grid-column:2}
-  [data-density=compact] .request-table-with-submitted .request-row .data-action{grid-row:2/5}
+  .request-heading{gap:.4rem}
+  .request-heading .actions .button{padding-inline:.55rem}
+  .request-table .request-row{grid-template-columns:minmax(0,1fr) 3rem auto;grid-template-areas:"number status status" "identity identity identity" "needed needed action";column-gap:.55rem}
+  .request-table-with-submitted .request-row{grid-template-areas:"number status status" "identity identity identity" "requested requested action" "needed needed action"}
+  .request-table .record-number{grid-area:number}
+  .request-identity{grid-area:identity}
+  .request-status{grid-area:status;justify-self:end}
+  .request-submitted{grid-area:requested}
+  .request-table .due{grid-area:needed}
+  .request-table .data-action{grid-area:action}
+  .request-table .row-button{padding-inline:.58rem}
+  .request-submitted,.request-table .due{font-size:.82rem}
+  [data-density=compact] .request-row{row-gap:.24rem}
+}
+@media(max-width:379px){
+  .register-inbox .request-toolbar select{grid-column:1/-1}
+}
+@media(min-width:380px) and (max-width:1049px){
+  .register-inbox .request-toolbar{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
 }
 .popup-notice{position:fixed;z-index:20;inset:auto;top:calc(var(--notice-top,0px) + max(.7rem,env(safe-area-inset-top)));right:calc(var(--notice-right,0px) + max(.7rem,env(safe-area-inset-right)));width:max-content;max-width:min(26rem,calc(var(--notice-width,100vw) - 1.4rem));margin:0;padding:.25rem .3rem .25rem .85rem;border:1px solid #a9cfb8;border-radius:10px;background:#eaf6ee;color:#194d37;box-shadow:0 8px 24px #102d2826}
 .popup-notice:is(:popover-open,.popup-notice-fallback){display:flex;align-items:center;gap:.4rem}
@@ -235,8 +242,8 @@ textarea{resize:vertical}
 .user-role{font-weight:700}
 .user-location{display:flex;align-items:baseline;gap:.32rem}
 .user-location .icon{align-self:start;margin-top:.04rem}
-.user-status .badge{font-size:.78rem;overflow-wrap:normal}
-.user-status .badge::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:currentColor}
+.user-status .badge,.request-status .badge{font-size:.78rem;overflow-wrap:normal}
+.user-status .badge::before,.request-status .badge::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:currentColor}
 .user-table .empty-row td{grid-column:1/-1}
 @media(max-width:899px){
   .users-heading .actions .button{padding-inline:.65rem}
@@ -341,6 +348,8 @@ textarea{resize:vertical}
   .user-table .user-role{width:15%}
   .user-table .user-status{width:1%;white-space:nowrap}
   .user-table .user-branch{width:23%}
+  .request-table th:first-child,.request-table .record-number,.request-table .request-status{width:1%;white-space:nowrap}
+  .request-table .request-submitted,.request-table .due{font-size:.82rem}
   .due-label{display:none}
   [data-density=compact] .data-table td,[data-density=compact] .data-table th{padding-block:.36rem}
   [data-density=compact] .user-avatar{width:28px;height:28px}
@@ -380,10 +389,6 @@ textarea{resize:vertical}
   .stat{padding:.55rem .75rem}
   .stat:nth-child(-n+2){border-bottom:0}
   .stat:not(:last-child){border-right:1px solid var(--line)}
-  .register .panel-header{grid-template-columns:minmax(8rem,1fr) minmax(11rem,auto) auto}
-  .register .search{grid-column:auto;grid-row:auto}
-  .register-inbox .panel-header{grid-template-columns:minmax(0,1fr) minmax(11.5rem,auto)}
-  .register-inbox #filter{grid-column:auto}
   .field-grid,.details{grid-template-columns:repeat(2,minmax(0,1fr))}
   .field.wide{grid-column:1/-1}
   .panel-content,.panel-header,.form-section{padding:1.2rem}
@@ -392,6 +397,8 @@ textarea{resize:vertical}
   .users-panel .user-toolbar{grid-template-columns:minmax(0,1fr) auto auto}
   .users-panel .user-toolbar-admin{grid-template-columns:minmax(0,1fr) minmax(8rem,10rem) auto auto}
   .user-toolbar-admin .user-search,.user-count{grid-column:auto}
+  .register:not(.register-inbox) .request-toolbar{grid-template-columns:minmax(0,1fr) minmax(10rem,12rem) auto}
+  .request-toolbar .search{grid-column:auto}
 }
 @media(min-width:820px){
   .frame{display:grid;grid-template-columns:232px minmax(0,1fr)}
@@ -430,8 +437,7 @@ textarea{resize:vertical}
   .frame:has(#request-form) .scroll-top{display:none}
 }
 @media(min-width:1050px){
-  .register-inbox .panel-header{grid-template-columns:minmax(8rem,1fr) minmax(12rem,auto) minmax(10rem,auto) auto}
-  .register-inbox .search,.register-inbox #filter,.register-inbox .density{grid-column:auto;grid-row:auto}
+  .register-inbox .request-toolbar{grid-template-columns:minmax(0,1fr) auto minmax(10rem,12rem) minmax(9rem,11rem)}
   .detail-layout{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);align-items:start}
 }
 @media print{
