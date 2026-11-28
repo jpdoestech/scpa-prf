@@ -175,6 +175,14 @@ export async function adminAccounts(values) {
   return unwrap(result);
 }
 
+export async function employeeDirectory() {
+  return unwrap(await supabase.rpc('prf_employee_directory'));
+}
+
+export async function saveEmployeeBranches(id, branches) {
+  return unwrap(await supabase.rpc('prf_save_employee_branches', { employee_id: id, branch_ids: branches }));
+}
+
 function approvalScope(query, id, assigned = false) {
   return query.or(assigned
     ? `supervisor_id.eq.${id},hrd_id.eq.${id}`

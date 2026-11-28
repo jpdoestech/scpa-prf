@@ -1,4 +1,8 @@
-import { config, supabase, context, adminAccounts, dashboard, pendingApprovals, record, requestOptions, optionDirectory, editRequestOption, addRequestOption, submit, decide, setDemoRole, currentDemoRole, pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto } from './data.js';
+import {
+  config, supabase, context, adminAccounts, dashboard, pendingApprovals, record, requestOptions,
+  optionDirectory, editRequestOption, addRequestOption, submit, decide, setDemoRole, currentDemoRole,
+  pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto, employeeDirectory, saveEmployeeBranches,
+} from './data.js';
 import { statuses, services, assignments, requisitions, canDecide, nextActor, eventTitle, day, dateTime, approvalTime, prfNumber } from './model.js';
 import { preparePrintImage, drawPrintImage, preparePrint, stampPrint } from './print.js';
 import { enhanceSelects, focusSelect } from './search-select.js';
@@ -173,7 +177,7 @@ function renderFrame(content) {
   app.innerHTML = `<div class="frame"><aside class="sidebar">${logo}
     <nav class="nav" aria-label="Main navigation">${nav('requests', 'My requests', 'list')}
       ${person.approver || person.superAdmin ? nav('inbox', 'Approval inbox', 'inbox') : ''}
-      ${person.superAdmin ? nav('admin', 'Users', 'users') : ''}</nav>
+      ${person.superAdmin || person.canManageOptions ? nav('admin', 'Users', 'users') : ''}</nav>
     ${person.approver || person.superAdmin ? '<span id="pending-approval-summary" class="sr-only" role="status"></span>' : ''}
     <header class="page-top"><div class="account">
       ${config.demo ? `<span class="demo-tag">Demo</span><select id="demo-role" aria-label="Demo role">
@@ -386,6 +390,10 @@ function renderUserRows(term = '') {
   document.getElementById('user-results').innerHTML = matches.length ? matches.map(account => {
     const label = account.name || (account.superAdmin ? 'Super administrator' : account.email);
     const status = account.active === null ? 'Profile pending' : account.active ? 'Active' : 'Inactive';
+    if (!person.superAdmin) return `<tr class="user-row"><td><strong>${escape(label)}</strong></td>
+      <td class="user-branch">${escape(account.branch)}</td>
+      <td class="data-action">${button('manage-user', 'Edit branches', 'secondary row-button', 'edit',
+        `data-id="${escape(account.id)}" aria-label="Edit branches for ${escape(label)}"`)}</td></tr>`;
     return `<tr class="user-row" role="row">
       <td role="cell"><span class="user-identity"><span class="avatar user-avatar" aria-hidden="true">${escape(initials(label))}</span>
         <span><strong>${escape(label)}</strong><small>${label === account.email ? '' : escape(account.email)}</small></span></span></td>
@@ -394,20 +402,39 @@ function renderUserRows(term = '') {
       <td class="user-status" role="cell"><span class="badge ${account.active ? 'approved' : account.active === false ? 'disapproved' : ''}">${status}</span></td>
       <td class="data-action" role="cell">${button('manage-user', 'Manage', 'secondary row-button', 'edit',
         `data-id="${escape(account.id)}" aria-label="Manage ${escape(label)}"`)}</td></tr>`;
-  }).join('') : '<tr class="empty-row" role="row"><td class="empty" role="cell" colspan="5">No accounts match your search.</td></tr>';
+  }).join('') : `<tr class="empty-row" role="row"><td class="empty" role="cell" colspan="${person.superAdmin ? 5 : 3}">No accounts match your search.</td></tr>`;
+}
+
+function branchCheckboxes(branches, assigned) {
+  const options = branches.filter(branch => branch.active !== false || assigned.includes(branch.id));
+  return `<fieldset class="branch-checklist"><legend>Assigned branches</legend>
+    ${options.length ? options.map(branch => `<label class="branch-check">
+      <input type="checkbox" name="branch_ids" value="${escape(branch.id)}" ${assigned.includes(branch.id) ? 'checked' : ''}>
+      <span>${escape(branch.name)}${branch.active === false ? ' (inactive)' : ''}</span>
+    </label>`).join('') : '<p class="muted small">No branches available.</p>'}</fieldset>`;
+}
+
+function renderEmployeeBranches(account, branches) {
+  return `${backButton('admin', 'Back to users')}
+    <div class="heading"><div><h1 tabindex="-1">Edit branches</h1><p>${escape(account.name)}</p></div></div>
+    <section class="panel panel-content branch-editor">
+      <form class="sheet" id="employee-branches-form" data-id="${escape(account.id)}">
+        ${branchCheckboxes(branches, account.branch_ids)}
+        <div class="actions">${submitButton('Save branches', 'check')}</div>
+      </form>
+    </section>`;
 }
 
 function renderAccountForm(account, approvers, branches, branchField) {
   const creating = !account;
   const current = account ?? {};
-  const choices = branches.filter(branch => branch.active !== false);
-  const inactiveBranch = branches.find(branch => branch.active === false && branch.id === current[branchField]);
+  const assigned = current.branch_ids ?? (current[branchField] ? [current[branchField]] : []);
   const selected = (key, value) => current[key] === value ? 'selected' : '';
   const approver = (name, label, role) => {
     const options = approvers.filter(p => p.account_role === role && p.id !== current.id);
     const previous = current[name] && !options.some(p => p.id === current[name])
       ? `<option value="${escape(current[name])}" selected>Current approver unavailable</option>` : '';
-    return field(name, label, `<select name="${name}" ${current.role === 'employee' && current.active ? 'required' : ''}>
+    return field(name, label, `<select name="${name}">
       <option value="">Choose an approver</option>${previous}
       ${options.map(p => `<option value="${escape(p.id)}" ${selected(name, p.id)}>${escape(p.name)}</option>`).join('')}
     </select>`);
@@ -425,13 +452,8 @@ function renderAccountForm(account, approvers, branches, branchField) {
         <div class="field-grid">
           ${field('account-name', 'Full name', `<input name="name" value="${escape(current.name)}" maxlength="100" required>`)}
           ${creating ? field('account-email', 'Email', '<input type="email" name="email" maxlength="254" autocomplete="off" required>') : ''}
-          ${field('account-branch', 'Assigned branch', `<select name="${branchField}" data-native-select required>
-            <option value="">Choose a branch</option>
-            ${inactiveBranch ? `<option value="${escape(inactiveBranch.id)}" selected hidden>${escape(inactiveBranch.name)} (inactive)</option>` : ''}
-            ${choices.map(branch => `<option value="${escape(branch.id)}" ${selected(branchField, branch.id)}>${escape(branch.name)}</option>`).join('')}
-          </select>${choices.length || inactiveBranch ? '' : `<small>${branchField === 'branch_id'
-            ? 'Add a branch from Users before assigning this account.'
-            : 'No branches are available for assignment yet.'}</small>`}`)}
+          <input type="hidden" name="branch_id" value="${escape(current.branch_id)}">
+          ${branchCheckboxes(branches, assigned)}
           ${field('account-role', 'Role', `<select name="role" required><option value="">Choose a role</option>${Object.entries(roleLabels).map(([id, label]) => `<option value="${id}" ${selected('role', id)}>${label}</option>`).join('')}</select>`)}
           ${creating ? '' : field('account-active', 'PRF access', `<select name="active"><option value="true"${current.active !== false ? ' selected' : ''}>Active</option><option value="false"${current.active === false ? ' selected' : ''}>Inactive</option></select>`)}
           ${approver('supervisor_id', 'Assigned supervisor', 'supervisor')}
@@ -462,9 +484,9 @@ async function openAdmin(view = '', message = '') {
     renderFrame('<div class="heading"><h1>Users</h1></div><p class="empty" role="status">Loading accounts…</p>');
   }
   try {
-    const directory = adminDirectory ?? await adminAccounts();
+    const directory = adminDirectory ?? await (person.superAdmin ? adminAccounts() : employeeDirectory());
     if (revision !== routeRevision) return;
-    const { accounts, approvers } = directory;
+    const { accounts, approvers = [] } = directory;
     if (!Array.isArray(accounts) || !Array.isArray(approvers)) {
       throw new Error('The user directory is unavailable. Try again.');
     }
@@ -473,27 +495,33 @@ async function openAdmin(view = '', message = '') {
     const branches = hasBranchDirectory ? directory.branches
       : [...new Set(accounts.map(account => account.branch).filter(Boolean))].sort()
         .map(name => ({ id: name, name }));
+    if (!person.superAdmin) {
+      const names = new Map(branches.map(branch => [branch.id, branch.name]));
+      accounts.forEach(account => { account.branch = account.branch_ids.map(id => names.get(id)).join(', '); });
+    }
     adminDirectory = directory;
     managedAccounts = accounts.sort((a, b) => Number(b.superAdmin) - Number(a.superAdmin)
       || (a.name || a.email).localeCompare(b.name || b.email));
     const account = managedAccounts.find(a => a.id === view);
-    if (view === 'new-branch') {
+    if (!person.superAdmin && account) {
+      renderFrame(renderEmployeeBranches(account, branches));
+    } else if (view === 'new-branch') {
       renderFrame(renderBranchForm());
     } else if (view === 'new' || account) {
       renderFrame(renderAccountForm(account, approvers, branches, hasBranchDirectory ? 'branch_id' : 'branch'));
     } else {
       renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
-        <div class="actions">${hasBranchDirectory ? button('new-branch', 'Add branch', 'secondary', 'plus') : ''}
+        <div class="actions">${person.superAdmin && hasBranchDirectory ? button('new-branch', 'Add branch', 'secondary', 'plus') : ''}
           ${button('request-options', 'Request options', 'secondary', 'list')}
-          ${button('new-user', 'New user', 'primary', 'plus')}</div></div>
+          ${person.superAdmin ? button('new-user', 'New user', 'primary', 'plus') : ''}</div></div>
         <section class="panel users-panel" aria-label="User accounts">
           <header class="panel-header"><h2 id="user-count" aria-live="polite">Accounts</h2>
             <label class="search user-search">${icon('search')}
-              <input id="user-search" type="search" value="${escape(adminSearch)}" aria-label="Search users" placeholder="Search name, email, or branch"></label>
+              <input id="user-search" type="search" value="${escape(adminSearch)}" aria-label="Search users" placeholder="${person.superAdmin ? 'Search name, email, or branch' : 'Search name or branch'}"></label>
             ${densityButton()}</header>
-          <table class="data-table user-table" role="table" aria-label="Accounts">
-            <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Account</th><th scope="col" role="columnheader">Role</th>
-              <th scope="col" role="columnheader">Branch</th><th scope="col" role="columnheader">PRF access</th>
+          <table class="data-table user-table ${person.superAdmin ? '' : 'scoped-user-table'}" role="table" aria-label="Accounts">
+            <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Account</th>${person.superAdmin ? '<th scope="col" role="columnheader">Role</th>' : ''}
+              <th scope="col" role="columnheader">Branches</th>${person.superAdmin ? '<th scope="col" role="columnheader">PRF access</th>' : ''}
               <th scope="col" role="columnheader" class="data-action">Action</th></tr></thead>
             <tbody id="user-results" role="rowgroup"></tbody>
           </table>
@@ -648,15 +676,14 @@ function detailView() {
       <div class="status-line">${badge(r.status)}${next ? `<span class="muted">Next action by ${escape(next)}</span>` : ''}</div></div>
       <div class="actions"><div class="print-choice"><select id="paper" aria-label="Paper size">
         <option ${paper === 'A4' ? 'selected' : ''}>A4</option><option ${paper === 'Letter' ? 'selected' : ''}>Letter</option>
-      </select>${button('print', 'Print PRF', 'secondary', 'print', 'data-mutation')}</div>
-      ${button('export', 'Export PRF', 'secondary', 'download', 'data-mutation')}
+      </select>${button('export', 'Print/Export PRF', 'secondary', 'print', 'data-mutation')}</div>
       ${mayEdit ? button('revise', 'Revise request', 'primary', 'edit') : ''}</div>
     </div>
     <div class="detail-layout">
       <section class="panel panel-content"><h2>Request details</h2><dl class="details">
         ${fieldEntry('Requested by', r.requester_name)}${fieldEntry('Branch / office', r.branch_name)}
         ${fieldEntry('Assigned area / store', f.area)}${fieldEntry('Headcount', f.headcount)}
-        ${fieldEntry('Date requested', day(r.submitted_at))}${fieldEntry('Date needed', day(f.needed))}
+        ${fieldEntry('Date requested', approvalTime(r.submitted_at, true))}${fieldEntry('Date needed', day(f.needed))}
         ${fieldEntry('Service time frame', f.service_other || services[f.service])}
         ${fieldEntry('Work assignment', assignments[f.assignment])}
         ${fieldEntry('Requisition type', requisitions[f.requisition])}${fieldEntry('Work schedule', f.schedule)}
@@ -841,7 +868,7 @@ async function manageOption(target, option) {
   } while (action === 'rename');
 }
 
-async function openRequestOptions(message = '') {
+async function openRequestOptions(message = '', focusTab = false) {
   const revision = ++routeRevision;
   clearTimeout(searchTimer);
   screen = 'options';
@@ -849,15 +876,17 @@ async function openRequestOptions(message = '') {
   const back = backButton('close-options', optionOrigin?.mode === 'admin' ? 'Back to users'
     : optionOrigin?.mode === 'inbox' ? 'Back to approval inbox' : 'Back to requests');
   const heading = `${back}<div class="heading"><h1 tabindex="-1">Request options</h1></div>
-    <div class="actions option-kinds" aria-label="Option categories">${Object.entries(optionKinds)
+    <div class="option-kinds" role="tablist" aria-label="Option categories">${Object.entries(optionKinds)
       .filter(([kind]) => kind !== 'branch' || person.superAdmin).map(([kind, title]) =>
-      button('option-kind', title, 'secondary density', 'list', `data-id="${kind}" aria-pressed="${kind === optionKind}"`)).join('')}</div>`;
+      button('option-kind', title, 'option-tab', 'list', `data-id="${kind}" id="option-tab-${kind}" role="tab"
+        aria-controls="option-panel" aria-selected="${kind === optionKind}" tabindex="${kind === optionKind ? 0 : -1}"`)).join('')}</div>`;
   const scroll = message ? window.scrollY : 0;
-  renderFrame(`${heading}<p class="empty" role="status">Loading request options…</p>`);
+  const panelAttrs = `id="option-panel" role="tabpanel" aria-labelledby="option-tab-${optionKind}"`;
+  renderFrame(`${heading}<div ${panelAttrs}><p class="empty" role="status">Loading request options…</p></div>`);
   try {
     const options = await optionDirectory(optionKind);
     if (revision !== routeRevision) return;
-    renderFrame(`${heading}<section class="panel panel-content option-directory">
+    renderFrame(`${heading}<section ${panelAttrs} class="panel panel-content option-directory">
       <form id="add-directory-option" class="option-edit-row">
         ${field('new-directory-option', `New ${label.toLowerCase()}`, '<input name="name" maxlength="100" required>')}
         ${submitButton(`Add ${label.toLowerCase()}`, 'plus')}
@@ -878,10 +907,10 @@ async function openRequestOptions(message = '') {
     </section>`);
     banner(message);
     window.scrollTo(0, scroll);
-    app.querySelector(message ? '#notice' : 'h1')?.focus({ preventScroll: true });
+    app.querySelector(message ? '#notice' : focusTab ? '[role="tab"][aria-selected="true"]' : 'h1')?.focus({ preventScroll: true });
   } catch (err) {
     if (revision !== routeRevision) return;
-    renderFrame(`${heading}${button('request-options', 'Try again', 'secondary', 'retry')}`);
+    renderFrame(`${heading}<div ${panelAttrs}>${button('request-options', 'Try again', 'secondary', 'retry')}</div>`);
     banner(err.message, true);
   }
 }
@@ -970,15 +999,10 @@ app.addEventListener('change', async e => {
     conditionalFields();
   } else if (target.name === 'decision') {
     target.form.elements.note.required = ['return', 'disapprove'].includes(target.value);
-  } else if (['role', 'active'].includes(target.name) && target.form?.id === 'admin-form') {
-    const fields = target.form.elements;
-    const required = fields.role.value === 'employee' && fields.active?.value !== 'false';
-    fields.supervisor_id.required = required;
-    fields.hrd_id.required = required;
   }
 });
 app.addEventListener('input', e => {
-  if (e.target.form?.id.startsWith('admin-form') && !e.target.matches('.search-select input')) adminDirty = true;
+  if (e.target.form?.id.match(/^(admin-form|employee-branches-form)/) && !e.target.matches('.search-select input')) adminDirty = true;
   if (e.target.id === 'user-search') {
     adminSearch = e.target.value;
     return renderUserRows(adminSearch);
@@ -990,6 +1014,15 @@ app.addEventListener('input', e => {
   searchTimer = setTimeout(refreshList, 220);
 });
 app.addEventListener('keydown', e => {
+  if (e.target.matches('[role="tab"]') && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+    const tabs = [...e.target.parentElement.querySelectorAll('[role="tab"]')];
+    const index = tabs.indexOf(e.target);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1
+      : (index + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    e.preventDefault();
+    tabs[next].click();
+    return;
+  }
   if (e.key !== 'Enter' || e.isComposing || !e.target.matches('.option-editor input')) return;
   e.preventDefault();
   e.target.closest('.option-editor').querySelector('button').click();
@@ -1029,7 +1062,7 @@ app.addEventListener('click', async e => {
     }
   } else if (action === 'add-request-option') {
     await saveRequestOption(target);
-  } else if (action === 'admin' && person?.superAdmin) {
+  } else if (action === 'admin' && (person?.superAdmin || person?.canManageOptions)) {
     await openAdmin();
   } else if (action === 'request-options' && (person?.superAdmin || person?.canManageOptions)) {
     if (screen !== 'options') {
@@ -1039,7 +1072,7 @@ app.addEventListener('click', async e => {
     await openRequestOptions();
   } else if (action === 'option-kind' && Object.hasOwn(optionKinds, id) && (id !== 'branch' || person.superAdmin)) {
     optionKind = id;
-    await openRequestOptions();
+    await openRequestOptions('', true);
   } else if (action === 'close-options') {
     const previous = optionOrigin;
     optionOrigin = null;
@@ -1060,7 +1093,7 @@ app.addEventListener('click', async e => {
     adminListPosition = window.scrollY;
     adminLauncher = 'new-branch';
     await openAdmin('new-branch');
-  } else if (action === 'manage-user' && person?.superAdmin) {
+  } else if (action === 'manage-user' && (person?.superAdmin || person?.canManageOptions)) {
     adminListPosition = window.scrollY;
     adminLauncher = id;
     adminDirectory = null;
@@ -1116,7 +1149,7 @@ app.addEventListener('click', async e => {
     detail = null;
     edit = null;
     renderLogin();
-  } else if (action === 'print' || action === 'export') {
+  } else if (action === 'export') {
     try {
       markBusy(true);
       const row = detail.row;
@@ -1133,14 +1166,10 @@ app.addEventListener('click', async e => {
         preview.layer = layer;
         printDownload.disabled = false;
         if (canCopyImage) copyImageButton.disabled = false;
-        if (action === 'export' && document.activeElement === printButton) printDownload.focus({ preventScroll: true });
+        if (document.activeElement === printButton && window.matchMedia('(pointer: fine)').matches) printDownload.focus({ preventScroll: true });
       }).catch(() => {
         if (printReturn === preview) printStatus.textContent = 'Could not create the PNG. Printing is still available.';
       });
-      if (action === 'print' && window.matchMedia('(pointer: fine)').matches) {
-        stampPrint(prepared);
-        window.print();
-      }
     } catch (err) {
       banner(`Could not prepare the printout. ${err.message}`, true);
     } finally {
@@ -1216,7 +1245,8 @@ app.addEventListener('submit', async event => {
   event.preventDefault();
   if (busy) return;
   const form = event.target;
-  const values = Object.fromEntries(new FormData(form));
+  const formData = new FormData(form);
+  const values = Object.fromEntries(formData);
   if (form.id === 'add-directory-option' || (form.id === 'admin-form-branch' && person?.superAdmin)) {
     const fromUsers = form.id === 'admin-form-branch';
     const name = (fromUsers ? values.branch_name : values.name).trim();
@@ -1262,7 +1292,16 @@ app.addEventListener('submit', async event => {
       accountUser = await updateOwnPassword(accountUser.email, values.current_password, values.new_password);
       form.reset();
       banner('Password changed.');
+    } else if (form.id === 'employee-branches-form' && person?.canManageOptions && !person.superAdmin) {
+      await saveEmployeeBranches(form.dataset.id, formData.getAll('branch_ids'));
+      adminDirectory = null;
+      adminDirty = false;
+      await openAdmin('', 'Employee branches saved.');
     } else if (['admin-form', 'admin-form-reset'].includes(form.id) && person?.superAdmin) {
+      if (form.id === 'admin-form') {
+        values.branch_ids = formData.getAll('branch_ids');
+        if (!values.branch_ids.length) throw new Error('Choose at least one branch.');
+      }
       const account = await adminAccounts(values);
       adminDirty = false;
       if (values.action !== 'reset') adminDirectory = null;

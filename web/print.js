@@ -82,7 +82,7 @@ export async function preparePrint(row, paper, events) {
   line(prfNumber(row), 498, 516.3, 77, 'PRF number');
   line(row.branch_name, 498, 528.5, 77, 'Branch / Office');
   line(row.requester_name, 192, 586.7, 158, 'Requester');
-  line(day(row.submitted_at), 436, 587, 137, 'Date requested');
+  line(approvalTime(row.submitted_at, true), 436, 587, 137, 'Date requested');
   line(f.position, 192, 598.4, 158, 'Position');
   line(day(f.needed), 436, 599, 137, 'Date needed');
   line(f.area, 121, 611.9, 230, 'Assigned area / store');

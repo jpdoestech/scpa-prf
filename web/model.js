@@ -27,11 +27,11 @@ const approvalClock = new Intl.DateTimeFormat('en-US', {
 });
 export const dateTime = value => value ? clock.format(new Date(value)) : '';
 export const day = value => value ? calendar.format(new Date(value)) : '';
-export function approvalTime(value) {
+export function approvalTime(value, spaceBeforePeriod = false) {
   if (!value) return '';
   const date = new Date(value);
   const parts = Object.fromEntries(approvalClock.formatToParts(date).map(({ type, value }) => [type, value]));
-  return `${day(date)} | ${parts.hour}:${parts.minute}${parts.dayPeriod.toLowerCase()}`;
+  return `${day(date)} | ${parts.hour}:${parts.minute}${spaceBeforePeriod ? ' ' : ''}${parts.dayPeriod.toLowerCase()}`;
 }
 export const prfNumber = row => row.number ?? 'Not yet issued';
 export const canDecide = (r, id) =>
