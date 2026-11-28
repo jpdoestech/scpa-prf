@@ -140,12 +140,49 @@ async function refreshApprovalCount(force = false) {
   finally { if (revision === approvalRevision) approvalLoading = false; }
 }
 
-function banner(message = '', error = false) {
-  const region = document.querySelector('#notice');
-  if (!region) return;
-  region.textContent = message;
-  region.className = `notice${error ? ' error' : ''}`;
-  region.hidden = !message;
+let dismissNotice;
+let noticePopup;
+function popupNotice(message = '', error = false, host = printPreview.hidden ? document.body : printPreview) {
+  dismissNotice?.();
+  if (!message) return;
+
+  const popup = document.createElement('div');
+  popup.className = `popup-notice${error ? ' error' : ''}`;
+  popup.setAttribute('popover', 'manual');
+  popup.innerHTML = `<p role="${error ? 'alert' : 'status'}" aria-atomic="true"></p>
+    ${button('dismiss-notice', '', 'popup-notice-dismiss', 'close', 'aria-label="Dismiss notification"')}`;
+  const region = popup.querySelector('p');
+  const focused = document.activeElement;
+  const viewport = window.visualViewport;
+  const fit = () => {
+    popup.style.setProperty('--notice-top', `${viewport?.offsetTop ?? 0}px`);
+    popup.style.setProperty('--notice-width', `${viewport?.width ?? window.innerWidth}px`);
+    popup.style.setProperty('--notice-right', `${Math.max(0, window.innerWidth - (viewport?.offsetLeft ?? 0) - (viewport?.width ?? window.innerWidth))}px`);
+  };
+  const show = requestAnimationFrame(() => { region.textContent = message; });
+  const timeout = setTimeout(close, 3500);
+  function close() {
+    const restoreFocus = popup.contains(document.activeElement);
+    cancelAnimationFrame(show);
+    clearTimeout(timeout);
+    viewport?.removeEventListener('resize', fit);
+    viewport?.removeEventListener('scroll', fit);
+    window.removeEventListener('resize', fit);
+    popup.remove();
+    dismissNotice = noticePopup = undefined;
+    if (restoreFocus && focused?.isConnected) focused.focus({ preventScroll: true });
+  }
+  dismissNotice = close;
+  noticePopup = popup;
+  popup.querySelector('button').addEventListener('click', close);
+  popup.querySelector('button').addEventListener('mousedown', event => event.preventDefault());
+  host.append(popup);
+  fit();
+  if (popup.showPopover) popup.showPopover();
+  else popup.classList.add('popup-notice-fallback');
+  viewport?.addEventListener('resize', fit);
+  viewport?.addEventListener('scroll', fit);
+  window.addEventListener('resize', fit);
 }
 function markBusy(value) {
   busy = value;
@@ -157,7 +194,6 @@ function renderLogin(message = '', error = false, inactive = false) {
   app.innerHTML = `<div class="login"><div class="login-shell"><div class="login-masthead">${logo}</div><article>
     <h1>${inactive ? 'Employee access required' : 'Sign in'}</h1>
     <p class="muted">${inactive ? 'Ask your PRF administrator to activate your employee profile.' : 'Sign in with the email and password for your PRF account.'}</p>
-    <div id="notice" class="notice" role="status" hidden></div>
     ${inactive ? button('signout', 'Sign out', 'secondary', 'exit', 'style="margin-top:1rem"') :
       `<form id="login-form">
         <label class="field">Email<input type="email" name="email" autocomplete="username" required></label>
@@ -166,7 +202,7 @@ function renderLogin(message = '', error = false, inactive = false) {
         <p class="muted small">For account access or a password reset, contact your PRF administrator.</p>
       </form>`}
   </article></div></div>`;
-  banner(message, error);
+  popupNotice(message, error);
 }
 
 function renderFrame(content) {
@@ -192,7 +228,6 @@ function renderFrame(content) {
         ${button('signout', '', 'secondary signout', 'exit', 'aria-label="Sign out" title="Sign out"')}`}
     </div></header>
   </aside><div class="page" data-density="${compact ? 'compact' : 'comfortable'}">
-    <div id="notice" role="status" class="notice" tabindex="-1" hidden></div>
     ${content}
   </div>${button('scroll-top', '', 'scroll-top', 'up', 'aria-label="Back to top" title="Back to top" hidden')}</div>`;
   syncScrollTop();
@@ -346,7 +381,7 @@ async function refreshList() {
     if (target) target.innerHTML = `<div class="empty">Unable to load requests. ${button('retry-list', 'Try again', 'secondary', 'retry')}</div>`;
     const footer = app.querySelector('.pagination');
     if (footer) footer.hidden = true;
-    banner(err.message, true);
+    popupNotice(err.message, true);
   }
 }
 
@@ -552,7 +587,7 @@ async function openAdmin(view = '', message = '') {
         </section>`);
       renderUserRows(adminSearch);
     }
-    banner(message);
+    popupNotice(message);
     window.scrollTo(0, view ? 0 : adminListPosition);
     if (view) app.querySelector('h1')?.focus({ preventScroll: true });
     else if (adminLauncher) {
@@ -563,7 +598,7 @@ async function openAdmin(view = '', message = '') {
   } catch (err) {
     if (revision === routeRevision) {
       renderFrame('<div class="heading"><h1>Users</h1></div>' + button('admin', 'Try again', 'secondary', 'retry'));
-      banner(err.message, true);
+      popupNotice(err.message, true);
     }
   }
 }
@@ -630,14 +665,13 @@ async function openPrfRecords(period = 'all', value = '', offset = 0, message = 
         ${button('prf-record-previous', '', 'secondary page-step', 'back', `aria-label="Previous page" ${offset ? '' : 'disabled'}`)}
         ${button('prf-record-next', '', 'secondary page-step', 'next', `aria-label="Next page" ${offset + rows.length >= total ? 'disabled' : ''}`)}
       </div></nav>` : '<p class="empty">No PRF records match this view.</p>'}`;
-    banner(message);
-    if (message) document.getElementById('notice')?.focus({ preventScroll: true });
+    popupNotice(message);
   } catch (error) {
     if (token !== routeRevision) return;
     const results = document.getElementById('prf-record-results');
     results.removeAttribute('aria-busy');
     results.innerHTML = '<p class="empty">PRF records unavailable.</p>';
-    banner(error.message, true);
+    popupNotice(error.message, true);
   }
 }
 
@@ -851,11 +885,11 @@ async function openRecord(id, origin = screenOrigin, message = '') {
     detail = next;
     detailView();
     app.querySelector('h1')?.focus({ preventScroll: true });
-    banner(message);
+    popupNotice(message);
   } catch (err) {
     if (token !== routeRevision) return;
     renderFrame(`${backButton('back', origin === 'inbox' ? 'Back to approval inbox' : 'Back to requests')}<h1>Request unavailable</h1>`);
-    banner(err.message, true);
+    popupNotice(err.message, true);
   }
 }
 
@@ -879,8 +913,7 @@ function optionDialog(title, content, launcher, { sheet = false, save, alert = B
   const dialog = document.createElement('dialog');
   dialog.className = `option-dialog${sheet ? ' option-action-sheet' : ''}`;
   dialog.setAttribute('aria-labelledby', 'option-dialog-title');
-  dialog.innerHTML = `<form method="dialog"><h2 id="option-dialog-title">${escape(title)}</h2>
-    ${content}<p class="option-dialog-error small" role="alert"></p></form>`;
+  dialog.innerHTML = `<form method="dialog"><h2 id="option-dialog-title">${escape(title)}</h2>${content}</form>`;
   const form = dialog.querySelector('form');
   const cancel = dialog.querySelector('[data-action="dismiss-option-dialog"]');
   cancel.addEventListener('click', () => dialog.close());
@@ -908,20 +941,18 @@ function optionDialog(title, content, launcher, { sheet = false, save, alert = B
   let savedValue;
   if (save) {
     const submit = form.querySelector('button[type="submit"]');
-    const error = form.querySelector('[role="alert"]');
-    renameFields?.append(error);
     dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
     form.addEventListener('submit', async event => {
       event.preventDefault();
       if (saving) return;
       saving = submit.disabled = cancel.disabled = true;
-      error.textContent = '';
+      if (noticePopup?.parentNode === dialog) dismissNotice();
       form.setAttribute('aria-busy', 'true');
       try {
         savedValue = await save(form);
         dialog.close('saved');
       } catch (err) {
-        error.textContent = err.message;
+        popupNotice(err.message, true, dialog);
       } finally {
         saving = submit.disabled = cancel.disabled = false;
         form.removeAttribute('aria-busy');
@@ -930,6 +961,7 @@ function optionDialog(title, content, launcher, { sheet = false, save, alert = B
   }
   return new Promise(resolve => {
     dialog.addEventListener('close', () => {
+      if (noticePopup?.parentNode === dialog) dismissNotice();
       viewport?.removeEventListener('resize', fit);
       viewport?.removeEventListener('scroll', fit);
       window.removeEventListener('resize', fit);
@@ -1030,13 +1062,13 @@ async function openRequestOptions(message = '', focusTab = false) {
         </li>`;
       }).join('')}</ul>` : '<p class="empty">No options yet.</p>'}
     </section>`);
-    banner(message);
+    popupNotice(message);
     window.scrollTo(0, scroll);
-    app.querySelector(message ? '#notice' : focusTab ? '[role="tab"][aria-selected="true"]' : 'h1')?.focus({ preventScroll: true });
+    app.querySelector(focusTab ? '[role="tab"][aria-selected="true"]' : 'h1')?.focus({ preventScroll: true });
   } catch (err) {
     if (revision !== routeRevision) return;
     renderFrame(`${heading}<div ${panelAttrs}>${button('request-options', 'Try again', 'secondary', 'retry')}</div>`);
-    banner(err.message, true);
+    popupNotice(err.message, true);
   }
 }
 
@@ -1051,7 +1083,7 @@ async function loadRequestOptions(back, retry, render) {
     if (revision !== routeRevision) return;
     renderFrame(`${back}<div class="heading"><h1>Request options unavailable</h1></div>
       ${button(retry, 'Try again', 'secondary', 'retry')}`);
-    banner(err.message, true);
+    popupNotice(err.message, true);
   }
 }
 
@@ -1253,9 +1285,9 @@ app.addEventListener('click', async e => {
         if (!templates.length) throw new Error('Enable at least one print template.');
         return savePrintTemplates(templates);
       } });
-      if (saved) banner('Print templates saved.');
+      if (saved) popupNotice('Print templates saved.');
     } catch (error) {
-      banner(error.message, true);
+      popupNotice(error.message, true);
     } finally {
       target.disabled = false;
     }
@@ -1288,7 +1320,7 @@ app.addEventListener('click', async e => {
   } else if (action === 'requests' || action === 'inbox') {
     if (action === 'requests' || person?.approver || person?.superAdmin) await goList(action);
   } else if (action === 'retry-list') {
-    banner();
+    popupNotice();
     await refreshList();
   } else if (action === 'new' && !person?.adminOnly) {
     requestListReturn = { mode: screen, page, filter, inboxStatus, search, scroll: window.scrollY };
@@ -1317,7 +1349,7 @@ app.addEventListener('click', async e => {
     }
   } else if (action === 'signout') {
     const { error } = await supabase.auth.signOut({ scope: 'local' });
-    if (error) return banner(error.message, true);
+    if (error) return popupNotice(error.message, true);
     ++routeRevision;
     ++listRevision;
     clearTimeout(searchTimer);
@@ -1354,7 +1386,7 @@ app.addEventListener('click', async e => {
       printButton.focus({ preventScroll: true });
       loadPrintImages(preview);
     } catch (err) {
-      banner(`Could not prepare the printout. ${err.message}`, true);
+      popupNotice(`Could not prepare the printout. ${err.message}`, true);
     } finally {
       markBusy(false);
     }
@@ -1366,11 +1398,9 @@ printPreview.querySelector('.print-controls').innerHTML = `<div class="actions">
   ${button('download-print', 'Download PNG', 'secondary', 'download', 'disabled')}
   ${button('copy-print', 'Copy image', 'secondary', 'copy', `disabled ${canCopyImage ? '' : 'hidden'}`)}
   </div><label class="print-template-choice" hidden>Print template <select id="print-template-choice" aria-label="Print template"></select></label>
-  <p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>
-  <p class="print-export-status small" role="status"></p>`;
+  <p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>`;
 const printDownload = printPreview.querySelector('[data-action="download-print"]');
 const copyImageButton = printPreview.querySelector('[data-action="copy-print"]');
-const printStatus = printPreview.querySelector('.print-export-status');
 const printTemplateSelect = document.getElementById('print-template-choice');
 const printButton = printPreview.querySelector('[data-action="send-to-printer"]');
 const closePrintButton = printPreview.querySelector('[data-action="close-print"]');
@@ -1385,7 +1415,7 @@ function loadPrintImages(preview) {
     printDownload.disabled = false;
     copyImageButton.disabled = !canCopyImage;
   }).catch(() => {
-    if (printReturn === preview && preview.prepared === prepared) printStatus.textContent = 'Could not create the PNG. Printing is still available.';
+    if (printReturn === preview && preview.prepared === prepared) popupNotice('Could not create the PNG. Printing is still available.', true);
   });
 }
 
@@ -1395,7 +1425,7 @@ printTemplateSelect.addEventListener('change', async () => {
   if (!preview?.templates.includes(template) || template === preview.template) return;
   printTemplateSelect.disabled = printButton.disabled = closePrintButton.disabled = true;
   printDownload.disabled = copyImageButton.disabled = true;
-  printStatus.textContent = '';
+  popupNotice();
   try {
     preview.prepared = await preparePrint(preview.row, preview.paper, preview.events, template);
     preview.template = template;
@@ -1404,7 +1434,7 @@ printTemplateSelect.addEventListener('change', async () => {
     printTemplateSelect.value = preview.template;
     printDownload.disabled = !preview.layer;
     copyImageButton.disabled = !preview.layer || !canCopyImage;
-    printStatus.textContent = error.message;
+    popupNotice(error.message, true);
   } finally {
     printTemplateSelect.disabled = printButton.disabled = closePrintButton.disabled = false;
     printTemplateSelect.focus({ preventScroll: true });
@@ -1432,7 +1462,7 @@ printPreview.addEventListener('click', async event => {
       link.click();
       link.remove();
     } catch {
-      printStatus.textContent = 'Could not download the PNG. Printing is still available.';
+      popupNotice('Could not download the PNG. Printing is still available.', true);
     }
   } else if (action === 'copy-print' && printReturn?.layer) {
     const preview = printReturn;
@@ -1443,9 +1473,9 @@ printPreview.addEventListener('click', async event => {
         else reject(new Error('Image unavailable.'));
       }, 'image/png'));
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })]);
-      if (printReturn === preview) printStatus.textContent = 'PRF image copied.';
+      if (printReturn === preview) popupNotice('PRF image copied.');
     } catch {
-      if (printReturn === preview) printStatus.textContent = 'Could not copy the image. Use Download PNG instead.';
+      if (printReturn === preview) popupNotice('Could not copy the image. Use Download PNG instead.', true);
     }
   } else if (action === 'close-print') {
     printPreview.hidden = true;
@@ -1457,7 +1487,7 @@ printPreview.addEventListener('click', async event => {
     if (printReturn.url) URL.revokeObjectURL(printReturn.url);
     printDownload.disabled = true;
     copyImageButton.disabled = true;
-    printStatus.textContent = '';
+    popupNotice();
     printReturn = null;
   }
 });
@@ -1477,7 +1507,7 @@ app.addEventListener('submit', async event => {
   if (form.id === 'add-directory-option' || (form.id === 'admin-form-branch' && person?.superAdmin)) {
     const fromUsers = form.id === 'admin-form-branch';
     const name = (fromUsers ? values.branch_name : values.name).trim();
-    if (!name) return banner('Enter an option name.', true);
+    if (!name) return popupNotice('Enter an option name.', true);
     const confirmed = await confirmOption('add', name, event.submitter,
       () => fromUsers ? adminAccounts(values) : addRequestOption(optionKind, name));
     if (!confirmed) return;
@@ -1489,7 +1519,7 @@ app.addEventListener('submit', async event => {
     return;
   }
   markBusy(true);
-  banner();
+  popupNotice();
   try {
     if (form.id === 'login-form') {
       const email = values.email.trim().toLowerCase();
@@ -1504,12 +1534,12 @@ app.addEventListener('submit', async event => {
       form.elements.display_name.value = person.name;
       adminDirectory = null;
       refreshProfileHeader();
-      banner('Display name saved.');
+      popupNotice('Display name saved.');
     } else if (form.id === 'profile-photo' && accountUser) {
       setProfilePhoto(await saveOwnPhoto(accountUser.id, values.photo));
       form.reset();
       form.querySelector('output').textContent = '';
-      banner('Profile picture saved.');
+      popupNotice('Profile picture saved.');
     } else if (form.id === 'profile-password' && accountUser) {
       if (values.new_password !== values.confirm_password) throw new Error('The new passwords do not match.');
       if (values.new_password === values.current_password) throw new Error('Choose a password different from your current one.');
@@ -1518,7 +1548,7 @@ app.addEventListener('submit', async event => {
       }
       accountUser = await updateOwnPassword(accountUser.email, values.current_password, values.new_password);
       form.reset();
-      banner('Password changed.');
+      popupNotice('Password changed.');
     } else if (form.id === 'employee-branches-form' && person?.canManageOptions && !person.superAdmin) {
       await saveEmployeeBranches(form.dataset.id, formData.getAll('branch_ids'));
       adminDirectory = null;
@@ -1560,8 +1590,7 @@ app.addEventListener('submit', async event => {
       await openRecord(row.id, screenOrigin, override ? 'Approval override recorded.' : 'Decision recorded.');
     }
   } catch (err) {
-    banner(err.message, true);
-    document.getElementById('notice')?.scrollIntoView({ block: 'nearest' });
+    popupNotice(err.message, true);
   } finally {
     markBusy(false);
   }

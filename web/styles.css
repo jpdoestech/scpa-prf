@@ -158,8 +158,13 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
   [data-density=compact] .user-row .user-branch,[data-density=compact] .user-row .user-status{grid-column:1}
   [data-density=compact] .user-row .data-action{grid-column:2;grid-row:2/5}
 }
-.notice{border:1px solid #c7e0d1;background:#eaf6ee;color:#194d37;padding:.72rem .85rem;border-radius:9px;margin:0 0 1rem}
-.notice.error{border-color:#ecc2bf;background:#fff0ef;color:#8b3030}
+.popup-notice{position:fixed;z-index:20;inset:auto;top:calc(var(--notice-top,0px) + max(.7rem,env(safe-area-inset-top)));right:calc(var(--notice-right,0px) + max(.7rem,env(safe-area-inset-right)));width:max-content;max-width:min(26rem,calc(var(--notice-width,100vw) - 1.4rem));margin:0;padding:.25rem .3rem .25rem .85rem;border:1px solid #a9cfb8;border-radius:10px;background:#eaf6ee;color:#194d37;box-shadow:0 8px 24px #102d2826}
+.popup-notice:is(:popover-open,.popup-notice-fallback){display:flex;align-items:center;gap:.4rem}
+dialog>.popup-notice-fallback{position:absolute;top:.5rem;right:.5rem;max-width:calc(100% - 1rem)}
+.popup-notice.error{border-color:#ecc2bf;background:#fff0ef;color:#8b3030}
+.popup-notice p{min-width:0;padding-block:.35rem;overflow-wrap:anywhere;font-size:.9rem;font-weight:650}
+.popup-notice-dismiss{flex:none;width:44px;padding:0;color:inherit;background:transparent}
+.popup-notice-dismiss:hover{background:#102d2810}
 .sheet{display:grid;gap:1rem}
 .form-section{padding:1rem}
 .form-section h2{margin-bottom:.85rem}
@@ -208,7 +213,6 @@ textarea{resize:vertical}
 .login h1{margin-bottom:.55rem}
 .login form{display:grid;gap:.9rem;margin-top:1.35rem}
 .login .button{width:100%}
-.login .notice{margin-top:.9rem}
 @media(min-width:620px){
   .login-shell{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr)}
   .login-masthead{padding:1.65rem}
@@ -297,9 +301,6 @@ textarea{resize:vertical}
 .option-rename-short .option-dialog-footer{padding-block:.28rem}
 .option-sheet-actions{display:grid;gap:.35rem}
 .option-sheet-actions .button{justify-content:flex-start}
-.option-dialog-error{color:#902f30}
-.option-rename-fields .option-dialog-error:not(:empty){margin-top:.45rem}
-.option-dialog-error:empty{display:none}
 .option-confirm-delete{background:#922f30;color:white}
 .option-confirm-delete:hover{background:#762326}
 @media(min-width:900px){
@@ -329,8 +330,6 @@ textarea{resize:vertical}
 .print-controls .back{margin:0}
 .print-template-choice{display:flex;align-items:center;flex-wrap:wrap;gap:.45rem;margin-top:.6rem;font-weight:700}
 .print-template-settings{margin:0;padding:.2rem .65rem;border:1px solid var(--line);border-radius:9px}
-.print-export-status{margin-top:.35rem;color:var(--deep)}
-.print-export-status:empty{display:none}
 .print-phone-help{margin-top:.5rem}
 #print-root{font-family:Arial,sans-serif}
 .print-sheet{background:white;padding:clamp(.75rem,5vw,var(--print-inset,14mm))}
@@ -405,7 +404,7 @@ h2.print-note{padding-top:2.5mm;font-size:10pt;letter-spacing:normal}
 @media print{
   html,body{margin:0!important;background:white!important;color:black!important}
   #print-preview{width:100%;padding:0;margin:0}
-  .print-controls{display:none!important}
+  .print-controls,.popup-notice{display:none!important}
   .print-sheet{padding:var(--print-inset,14mm);break-inside:avoid;break-after:page}
   .print-sheet+.print-sheet{margin-top:0}
   .print-sheet:last-child{break-after:auto}
