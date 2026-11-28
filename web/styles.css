@@ -331,8 +331,6 @@ textarea{resize:vertical}
 .print-phone-help{margin-top:.5rem}
 #print-root{background:white;padding:clamp(.75rem,5vw,14mm);font-family:Arial,sans-serif}
 #print-root svg{display:block;width:100%;height:auto;margin-inline:auto}
-#print-root .print-extra{margin:4mm 2mm 0;font-size:9pt;line-height:1.32;white-space:pre-wrap;overflow-wrap:anywhere}
-#print-root .print-extra p{margin:1.2mm 0}
 #print-root .print-supplement{margin:3mm 2mm 0;font-size:9pt;line-height:1.4;overflow-wrap:anywhere}
 #print-root .print-supplement p{margin:1mm 0;white-space:pre-wrap}
 #print-root .print-supplement h2{margin-top:2.5mm;font-size:10pt;letter-spacing:normal}
@@ -403,12 +401,8 @@ textarea{resize:vertical}
   html,body{margin:0!important;background:white!important;color:black!important}
   #print-preview{width:100%;padding:0;margin:0}
   .print-controls{display:none!important}
-  #print-root svg,#print-root .print-extra{break-inside:avoid}
+  #print-root{padding:0}
+  #print-root svg{break-inside:avoid}
   #print-root .print-supplement h2{break-after:avoid}
   #print-root .print-supplement p{break-inside:avoid}
 }
-.measure-print{position:absolute;visibility:hidden;inset:0 auto auto 0;font-family:Arial,sans-serif;pointer-events:none}
-.measure-print .print-extra{margin:4mm 2mm 0;font-size:9pt;line-height:1.32;overflow-wrap:anywhere}
-.measure-print .print-extra p{margin:1.2mm 0}
-.print-extra.compact p{display:inline}
-.print-extra.compact p+p::before{content:"  •  ";white-space:pre}

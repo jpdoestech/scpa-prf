@@ -27,6 +27,19 @@ const approvalClock = new Intl.DateTimeFormat('en-US', {
 });
 export const dateTime = value => value ? clock.format(new Date(value)) : '';
 export const day = value => value ? calendar.format(new Date(value)) : '';
+const rangeDay = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const rangeDate = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+
+export function neededDateRange({ needed, needed_to: end = needed }) {
+  if (!needed) return '';
+  const first = new Date(`${needed}T00:00:00Z`);
+  const last = new Date(`${end || needed}T00:00:00Z`);
+  const days = (last - first) / 86_400_000 + 1;
+  const finish = rangeDate.format(last);
+  if (days === 1) return `${finish} (1 day)`;
+  const start = first.getUTCFullYear() === last.getUTCFullYear() ? rangeDay : rangeDate;
+  return `${start.format(first)} – ${finish} (${days} days)`;
+}
 export function approvalTime(value, spaceBeforePeriod = false) {
   if (!value) return '';
   const date = new Date(value);
@@ -59,7 +72,7 @@ export const eventTitle = e => {
 
 const correctionFields = {
   requester_name: 'Requested by', branch_name: 'Branch / office', position: 'Position title',
-  area: 'Assigned area / store', needed: 'Date needed', headcount: 'Headcount',
+  area: 'Assigned area / store', needed: 'Date needed from', needed_to: 'Date needed to', headcount: 'Headcount',
   service: 'Service time frame', service_other: 'Service time frame details', assignment: 'Work assignment',
   schedule: 'Work schedule', requisition: 'Requisition type', reason: 'Requisition details',
   qualifications: 'Qualifications', salary: 'Proposed salary', allowance: 'Allowance',
@@ -69,7 +82,7 @@ const correctionChoices = { service: services, assignment: assignments, requisit
 export function correctionHistory(event) {
   const format = (key, value) => {
     if (!value) return 'Not entered';
-    if (key === 'needed') return day(value);
+    if (key === 'needed' || key === 'needed_to') return day(value);
     return correctionChoices[key]?.[value] ?? value;
   };
   return Object.entries(correctionFields).flatMap(([key, label]) => {

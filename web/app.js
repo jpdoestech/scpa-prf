@@ -3,7 +3,7 @@ import {
   optionDirectory, editRequestOption, addRequestOption, submit, decide, setDemoRole, currentDemoRole,
   pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto, employeeDirectory, saveEmployeeBranches,
 } from './data.js';
-import { statuses, services, assignments, requisitions, canDecide, skippedApproval, nextActor, eventTitle, correctionHistory, day, dateTime, approvalTime, prfNumber } from './model.js';
+import { statuses, services, assignments, requisitions, canDecide, skippedApproval, nextActor, eventTitle, correctionHistory, neededDateRange, dateTime, approvalTime, prfNumber } from './model.js';
 import { preparePrintImage, drawPrintImage, preparePrint, stampPrint } from './print.js';
 import { enhanceSelects, focusSelect } from './search-select.js';
 
@@ -319,7 +319,7 @@ function renderList() {
       <td class="record-number" role="cell">${escape(prfNumber(r))}</td>
       <td class="request-identity" role="cell"><strong>${escape(r.form.position)}</strong><small>${escape(screen === 'inbox' ? r.requester_name : r.form.area)}</small></td>
       ${showRequested ? `<td class="request-submitted" role="cell"><span class="due-label">Requested </span>${escape(approvalTime(r.submitted_at, true))}</td>` : ''}
-      <td class="due" role="cell"><span class="due-label">Needed </span>${escape(day(r.form.needed))}</td>
+      <td class="due" role="cell"><span class="due-label">Needed </span>${escape(neededDateRange(r.form))}</td>
       <td class="request-status" role="cell">${badge(r.status)}</td>
       <td class="data-action" role="cell">${button('record', 'Open', 'secondary row-button', 'open',
         `data-id="${escape(r.id)}" aria-label="Open ${r.number ? `${escape(r.number)}, ` : ''}${escape(r.form.position)}"`)}</td>
@@ -706,7 +706,7 @@ function requestOptionFields(options, values = {}) {
 }
 
 function formView(options) {
-  const values = edit?.form ?? {};
+  const values = { ...edit?.form, needed_to: edit?.form.needed_to ?? edit?.form.needed };
   const val = name => escape(values[name]);
   const input = (name, label, type, options, opts) =>
     field(name, label, `<input name="${name}" type="${type}" value="${val(name)}" ${options}>`, opts);
@@ -722,8 +722,9 @@ function formView(options) {
     <form id="request-form" class="sheet">
       <section class="panel form-section"><h2>Personnel needed</h2><div class="field-grid">
         ${requestOptionFields(options, { ...values, branch: edit?.branch_name ?? person.branch })}
-        ${input('needed', 'Date needed', 'date', 'required')}
         ${input('headcount', 'Number of personnel', 'text', 'inputmode="numeric" pattern="[1-9][0-9]{0,3}" title="Enter a whole number from 1 to 9,999." required')}
+        ${input('needed', 'Date needed from', 'date', 'required')}
+        ${input('needed_to', 'Date needed to', 'date', `min="${val('needed')}" required`)}
       </div></section>
       <section class="panel form-section"><h2>Assignment</h2><div class="field-grid">
         ${select('service', 'Service time frame', services)}
@@ -785,7 +786,7 @@ function detailView() {
       <section class="panel panel-content"><h2>Request details</h2><dl class="details">
         ${fieldEntry('Requested by', r.requester_name)}${fieldEntry('Branch / office', r.branch_name)}
         ${fieldEntry('Assigned area / store', f.area)}${fieldEntry('Headcount', f.headcount)}
-        ${fieldEntry('Date requested', approvalTime(r.submitted_at, true))}${fieldEntry('Date needed', day(f.needed))}
+        ${fieldEntry('Date requested', approvalTime(r.submitted_at, true))}${fieldEntry('Date needed', neededDateRange(f))}
         ${fieldEntry('Service time frame', f.service_other || services[f.service])}
         ${fieldEntry('Work assignment', assignments[f.assignment])}
         ${fieldEntry('Requisition type', requisitions[f.requisition])}${fieldEntry('Work schedule', f.schedule)}
@@ -1113,6 +1114,8 @@ app.addEventListener('change', async e => {
     target.form.querySelector('output').textContent = target.files[0]?.name ?? '';
   } else if (target.name === 'service' || target.name === 'requisition') {
     conditionalFields();
+  } else if (target.name === 'needed' && target.form?.id === 'request-form') {
+    target.form.elements.needed_to.min = target.value;
   } else if (target.name === 'role' && target.form?.id === 'admin-form') {
     target.form.querySelector('.approval-override-control').hidden = !['supervisor', 'hrd'].includes(target.value);
   } else if (target.name === 'decision') {
@@ -1309,7 +1312,7 @@ app.addEventListener('click', async e => {
       window.scrollTo(0, 0);
       const printButton = printPreview.querySelector('[data-action="send-to-printer"]');
       printButton.focus({ preventScroll: true });
-      void preparePrintImage(prepared.svg).then(layer => {
+      void preparePrintImage(prepared.sections).then(layer => {
         if (printReturn !== preview) return;
         preview.layer = layer;
         printDownload.disabled = false;
