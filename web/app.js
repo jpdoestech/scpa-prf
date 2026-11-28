@@ -36,6 +36,7 @@ const paths = {
   download: '<path d="M12 4v11m-4-4 4 4 4-4M5 16v4h14v-4"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  pin: '<path d="M19 10c0 5-7 10-7 10S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2"/>',
 };
 const icon = key => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[key]}</svg>`;
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => (
@@ -419,32 +420,37 @@ let managedAccounts = [];
 let adminDirectory;
 let adminListPosition = 0;
 let adminSearch = '';
+let adminRole = '';
 let adminLauncher = '';
 let adminDirty = false;
 let prfRecordReview;
 const roleLabels = { employee: 'Officer/Agent', coordinator: 'Coordinator', supervisor: 'Supervisor', hrd: 'HRD approver', other: 'Other staff' };
+const userRole = account => account.superAdmin ? 'Super admin' : roleLabels[account.role] ?? 'Unassigned';
 
-function renderUserRows(term = '') {
+function renderUserRows() {
+  const term = adminSearch.trim().toLowerCase();
   const matches = managedAccounts.filter(account =>
-    [account.name, account.email, account.branch, roleLabels[account.role], account.superAdmin ? 'Super admin' : '']
-      .filter(Boolean).join(' ').toLowerCase().includes(term.trim().toLowerCase()));
-  document.getElementById('user-count').textContent = `${matches.length} ${matches.length === 1 ? 'account' : 'accounts'}`;
+    (!person.superAdmin || !adminRole || userRole(account) === adminRole) &&
+    [account.name, account.email, account.branch, person.superAdmin ? userRole(account) : '']
+      .filter(Boolean).join(' ').toLowerCase().includes(term));
+  const count = document.getElementById('user-count');
+  count.textContent = matches.length === managedAccounts.length
+    ? `${matches.length} ${matches.length === 1 ? 'account' : 'accounts'}`
+    : `${matches.length} of ${managedAccounts.length} accounts`;
   document.getElementById('user-results').innerHTML = matches.length ? matches.map(account => {
     const label = account.name || (account.superAdmin ? 'Super administrator' : account.email);
     const status = account.active === null ? 'Profile pending' : account.active ? 'Active' : 'Inactive';
-    if (!person.superAdmin) return `<tr class="user-row"><td><strong>${escape(label)}</strong></td>
-      <td class="user-branch">${escape(account.branch)}</td>
-      <td class="data-action">${button('manage-user', 'Edit branches', 'secondary row-button', 'edit',
-        `data-id="${escape(account.id)}" aria-label="Edit branches for ${escape(label)}"`)}</td></tr>`;
+    const action = person.superAdmin ? 'Manage' : 'Edit branches';
     return `<tr class="user-row" role="row">
-      <td role="cell"><span class="user-identity"><span class="avatar user-avatar" aria-hidden="true">${escape(initials(label))}</span>
+      <td class="user-account" role="cell"><span class="user-identity"><span class="avatar user-avatar" aria-hidden="true">${escape(initials(label))}</span>
         <span><strong>${escape(label)}</strong><small>${label === account.email ? '' : escape(account.email)}</small></span></span></td>
-      <td class="user-role" role="cell">${account.superAdmin ? 'Super admin' : escape(roleLabels[account.role] ?? 'Unassigned')}</td>
-      <td class="user-branch" role="cell">${escape(account.branch || 'No branch')}</td>
-      <td class="user-status" role="cell"><span class="badge ${account.active ? 'approved' : account.active === false ? 'disapproved' : ''}">${status}</span></td>
-      <td class="data-action" role="cell">${button('manage-user', 'Manage', 'secondary row-button', 'edit',
-        `data-id="${escape(account.id)}" aria-label="Manage ${escape(label)}"`)}</td></tr>`;
-  }).join('') : `<tr class="empty-row" role="row"><td class="empty" role="cell" colspan="${person.superAdmin ? 5 : 3}">No accounts match your search.</td></tr>`;
+      ${person.superAdmin ? `<td class="user-role" role="cell">${escape(userRole(account))}</td>` : ''}
+      <td class="user-branch" role="cell"><span class="user-location">${icon('pin')}<span>${escape(account.branch || 'No branch')}</span></span></td>
+      ${person.superAdmin ? `<td class="user-status" role="cell"><span class="badge ${account.active ? 'approved' : account.active === false ? 'disapproved' : ''}">${status}</span></td>` : ''}
+      <td class="data-action" role="cell">${button('manage-user', action, 'secondary row-button', 'edit',
+        `data-id="${escape(account.id)}" aria-label="${action}${person.superAdmin ? '' : ' for'} ${escape(label)}"`)}</td></tr>`;
+  }).join('') : `<tr class="empty-row" role="row"><td class="empty" role="cell" colspan="${person.superAdmin ? 5 : 3}">${managedAccounts.length
+    ? 'No accounts match these filters.' : 'No accounts are available.'}</td></tr>`;
 }
 
 function assignmentChecklist(name, label, options, assigned, wide = '') {
@@ -597,16 +603,22 @@ async function openAdmin(view = '', message = '') {
       renderFrame(renderAccountForm(account, approvers, branches, hasBranchDirectory ? 'branch_id' : 'branch'));
       updateCoordinatorProfile(document.getElementById('admin-form'));
     } else {
-      renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
-        <div class="actions">${person.superAdmin && hasBranchDirectory ? button('new-branch', 'Add branch', 'secondary', 'plus') : ''}
-          ${button('request-options', 'Request options', 'secondary', 'list')}
-          ${person.superAdmin ? button('manage-prf-records', 'Manage PRF records', 'secondary', 'archive') +
-            button('print-settings', 'Print templates', 'secondary', 'print', 'aria-haspopup="dialog"') + button('new-user', 'New user', 'primary', 'plus') : ''}</div></div>
+      const requestOptionsAction = button('request-options', 'Request options', 'secondary', 'list');
+      renderFrame(`<div class="heading register-heading users-heading"><h1 tabindex="-1">Users</h1>
+        <div class="actions">${person.superAdmin ? `<details class="user-tools"><summary class="button secondary">${icon('more')}Tools</summary>
+          <div class="user-tools-list">${hasBranchDirectory ? button('new-branch', 'Add branch', 'secondary', 'plus') : ''}
+            ${requestOptionsAction}${button('print-settings', 'Print templates', 'secondary', 'print', 'aria-haspopup="dialog"')}
+            ${button('manage-prf-records', 'Manage PRF records', 'secondary', 'archive')}</div></details>
+          ${button('new-user', 'New user', 'primary', 'plus')}` : requestOptionsAction}</div></div>
         <section class="panel users-panel" aria-label="User accounts">
-          <header class="panel-header"><h2 id="user-count" aria-live="polite">Accounts</h2>
+          <header class="panel-header user-toolbar${person.superAdmin ? ' user-toolbar-admin' : ''}">
             <label class="search user-search">${icon('search')}
-              <input id="user-search" type="search" value="${escape(adminSearch)}" aria-label="Search users" placeholder="${person.superAdmin ? 'Search name, email, or branch' : 'Search name or branch'}"></label>
-            ${densityButton()}</header>
+              <input id="user-search" type="search" value="${escape(adminSearch)}" aria-label="Search users" placeholder="${person.superAdmin ? 'Name, email, or branch' : 'Name or branch'}"></label>
+            ${person.superAdmin ? `<select id="user-role-filter" aria-label="Filter by role">
+              <option value="">All roles</option>${['Super admin', ...Object.values(roleLabels), 'Unassigned'].map(role =>
+                `<option${adminRole === role ? ' selected' : ''}>${escape(role)}</option>`).join('')}
+            </select>` : ''}
+            ${densityButton()}<p id="user-count" class="user-count" role="status"></p></header>
           <table class="data-table user-table ${person.superAdmin ? '' : 'scoped-user-table'}" role="table" aria-label="Accounts">
             <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Account</th>${person.superAdmin ? '<th scope="col" role="columnheader">Role</th>' : ''}
               <th scope="col" role="columnheader">Branches</th>${person.superAdmin ? '<th scope="col" role="columnheader">PRF access</th>' : ''}
@@ -614,7 +626,7 @@ async function openAdmin(view = '', message = '') {
             <tbody id="user-results" role="rowgroup"></tbody>
           </table>
         </section>`);
-      renderUserRows(adminSearch);
+      renderUserRows();
     }
     popupNotice(message);
     window.scrollTo(0, view ? 0 : adminListPosition);
@@ -622,7 +634,7 @@ async function openAdmin(view = '', message = '') {
     else if (adminLauncher) {
       const launcher = [...app.querySelectorAll('button[data-action]')].find(node =>
         node.dataset.id === adminLauncher || node.dataset.action === adminLauncher);
-      launcher?.focus({ preventScroll: true });
+      (launcher?.closest('.user-tools')?.querySelector('summary') ?? launcher)?.focus({ preventScroll: true });
     } else app.querySelector('h1')?.focus({ preventScroll: true });
   } catch (err) {
     if (revision === routeRevision) {
@@ -1204,6 +1216,9 @@ app.addEventListener('change', async e => {
     page = 0;
     clearTimeout(searchTimer);
     await refreshList();
+  } else if (target.id === 'user-role-filter') {
+    adminRole = target.value;
+    renderUserRows();
   } else if (target.id === 'rows-per-page' && pageSizes.includes(Number(target.value))) {
     rowsPerPage = Number(target.value);
     saveViewPreference('prf-rows-per-page', String(rowsPerPage));
@@ -1240,7 +1255,7 @@ app.addEventListener('input', e => {
   if (e.target.form?.id.match(/^(admin-form|employee-branches-form)/) && !e.target.matches('.search-select input')) adminDirty = true;
   if (e.target.id === 'user-search') {
     adminSearch = e.target.value;
-    return renderUserRows(adminSearch);
+    return renderUserRows();
   }
   if (e.target.id !== 'search') return;
   search = e.target.value.trim();
@@ -1249,6 +1264,14 @@ app.addEventListener('input', e => {
   searchTimer = setTimeout(refreshList, 220);
 });
 app.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const tools = e.target.closest('.user-tools[open]');
+    if (tools) {
+      tools.open = false;
+      tools.querySelector('summary').focus();
+      return;
+    }
+  }
   if (e.target.matches('[role="tab"]') && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
     const tabs = [...e.target.parentElement.querySelectorAll('[role="tab"]')];
     const index = tabs.indexOf(e.target);
@@ -1263,6 +1286,8 @@ app.addEventListener('keydown', e => {
   e.target.closest('.option-editor').querySelector('button').click();
 });
 app.addEventListener('click', async e => {
+  const tools = app.querySelector('.user-tools[open]');
+  if (tools && !tools.contains(e.target)) tools.open = false;
   const target = e.target.closest('button[data-action]')
     ?? (window.getSelection()?.isCollapsed ? e.target.closest('.request-row')?.querySelector('[data-action="record"]') : null);
   if (!target || busy) return;
@@ -1303,6 +1328,10 @@ app.addEventListener('click', async e => {
     if (screen !== 'options') {
       optionOrigin = { mode: screen, page, filter, inboxStatus, search, scroll: window.scrollY };
       optionKind = person.superAdmin ? 'branch' : 'position';
+      if (screen === 'admin') {
+        adminListPosition = window.scrollY;
+        adminLauncher = action;
+      }
     }
     await openRequestOptions();
   } else if (action === 'option-kind' && Object.hasOwn(optionKinds, id) && (id !== 'branch' || person.superAdmin)) {
@@ -1420,6 +1449,7 @@ app.addEventListener('click', async e => {
     managedAccounts = [];
     adminDirectory = null;
     adminSearch = '';
+    adminRole = '';
     adminListPosition = 0;
     adminLauncher = '';
     detail = null;

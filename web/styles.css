@@ -69,11 +69,10 @@ h1[tabindex="-1"]:focus{outline:none}
 .panel-content{padding:1rem}
 .panel-header{padding:1rem;border-bottom:1px solid var(--line)}
 .panel-header h2{margin-bottom:.65rem}
-.register .panel-header,.users-panel .panel-header{display:grid;align-items:center;grid-template-columns:minmax(0,1fr) auto;gap:.5rem;padding:.65rem}
+.register .panel-header,.users-panel .user-toolbar{display:grid;align-items:center;grid-template-columns:minmax(0,1fr) auto;gap:.5rem;padding:.65rem}
 .register .filters{display:contents}
-.register .search,.users-panel .user-search{grid-column:1/-1}
+.register .search,.user-toolbar-admin .user-search{grid-column:1/-1}
 .register-inbox #filter{grid-column:1/-1}
-.users-panel .user-search{grid-row:2}
 .density{justify-self:end}
 .search input{font-size:1rem}
 .search input{min-width:0}
@@ -155,8 +154,6 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
   .request-table-with-submitted .request-row .due{grid-row:4;grid-column:1}
   .request-table-with-submitted .request-row .data-action{grid-row:3/5;grid-column:2}
   [data-density=compact] .request-table-with-submitted .request-row .data-action{grid-row:2/5}
-  [data-density=compact] .user-row .user-branch,[data-density=compact] .user-row .user-status{grid-column:1}
-  [data-density=compact] .user-row .data-action{grid-column:2;grid-row:2/5}
 }
 .popup-notice{position:fixed;z-index:20;inset:auto;top:calc(var(--notice-top,0px) + max(.7rem,env(safe-area-inset-top)));right:calc(var(--notice-right,0px) + max(.7rem,env(safe-area-inset-right)));width:max-content;max-width:min(26rem,calc(var(--notice-width,100vw) - 1.4rem));margin:0;padding:.25rem .3rem .25rem .85rem;border:1px solid #a9cfb8;border-radius:10px;background:#eaf6ee;color:#194d37;box-shadow:0 8px 24px #102d2826}
 .popup-notice:is(:popover-open,.popup-notice-fallback){display:flex;align-items:center;gap:.4rem}
@@ -220,14 +217,43 @@ textarea{resize:vertical}
 @media(max-height:550px){
   .sidebar,.page-top{position:static}
 }
-.user-row>td:first-child{grid-column:1/-1}
+.users-heading .actions{position:relative}
+.user-tools summary{list-style:none;cursor:pointer}
+.user-tools summary::-webkit-details-marker{display:none}
+.user-tools[open] summary{background:#e8f3ed;border-color:#91b8a3}
+.user-tools-list{position:absolute;z-index:5;inset-inline-end:0;top:calc(100% + .4rem);width:min(14rem,calc(100vw - 1.7rem));display:grid;gap:.15rem;padding:.3rem;border:1px solid var(--line);border-radius:12px;background:var(--white);box-shadow:0 8px 24px #173c2a20}
+.user-tools-list .button{justify-content:flex-start;border-color:transparent;text-align:left}
+.user-tools-list .icon,.user-location .icon{width:16px;height:16px}
+.user-count{grid-column:1/-1;color:var(--muted);font-size:.8rem;font-weight:700;font-variant-numeric:tabular-nums}
+.user-toolbar #user-role-filter{width:100%;min-width:0}
 .user-identity{display:flex;align-items:center;gap:.62rem;min-width:0}
 .user-identity>span:last-child{min-width:0}
 .user-identity strong,.user-identity small{display:block;overflow-wrap:anywhere}
 .user-identity small,.user-branch{color:var(--muted)}
 .user-identity small:empty{display:none}
 .user-avatar{width:34px;height:34px;border-radius:9px;background:#e8f2ec}
-.users-panel .panel-header h2{font-size:.92rem;margin:0}
+.user-role{font-weight:700}
+.user-location{display:flex;align-items:baseline;gap:.32rem}
+.user-location .icon{align-self:start;margin-top:.04rem}
+.user-status .badge{font-size:.78rem;overflow-wrap:normal}
+.user-status .badge::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:currentColor}
+.user-table .empty-row td{grid-column:1/-1}
+@media(max-width:899px){
+  .users-heading .actions .button{padding-inline:.65rem}
+  .user-table .user-row{grid-template-columns:minmax(0,max-content) minmax(0,1fr) auto;grid-template-areas:"account account account" "role status action" "branch branch action";column-gap:.45rem}
+  .scoped-user-table .user-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"account action" "branch action"}
+  .user-account{grid-area:account}
+  .user-role{grid-area:role;font-size:.82rem;color:var(--muted)}
+  .user-branch{grid-area:branch;font-size:.82rem}
+  .user-status{grid-area:status;justify-self:start}
+  .user-table .data-action{grid-area:action}
+  .user-table .row-button{padding-inline:.58rem}
+  [data-density=compact] .user-row{row-gap:.2rem}
+}
+@media(max-width:379px){
+  .user-table:not(.scoped-user-table) .user-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"account account" "role status" "branch action"}
+  .user-status{justify-self:end}
+}
 .admin-panels{display:grid;gap:1rem;align-items:start}
 .admin-editor h2{margin-bottom:1rem}
 .branch-editor{max-width:31rem}
@@ -312,6 +338,9 @@ textarea{resize:vertical}
   .data-table th{background:#edf3ef;color:#3d564a;font-size:.78rem;font-weight:800}
   .data-table tbody td{border-top:1px solid var(--line)}
   .data-table .data-action{white-space:nowrap;width:1%}
+  .user-table .user-role{width:15%}
+  .user-table .user-status{width:1%;white-space:nowrap}
+  .user-table .user-branch{width:23%}
   .due-label{display:none}
   [data-density=compact] .data-table td,[data-density=compact] .data-table th{padding-block:.36rem}
   [data-density=compact] .user-avatar{width:28px;height:28px}
@@ -352,14 +381,17 @@ textarea{resize:vertical}
   .stat:nth-child(-n+2){border-bottom:0}
   .stat:not(:last-child){border-right:1px solid var(--line)}
   .register .panel-header{grid-template-columns:minmax(8rem,1fr) minmax(11rem,auto) auto}
-  .users-panel .panel-header{grid-template-columns:auto minmax(9rem,1fr) auto}
-  .register .search,.users-panel .user-search{grid-column:auto;grid-row:auto}
+  .register .search{grid-column:auto;grid-row:auto}
   .register-inbox .panel-header{grid-template-columns:minmax(0,1fr) minmax(11.5rem,auto)}
   .register-inbox #filter{grid-column:auto}
-  .users-panel .user-search{max-width:26rem;margin-inline-start:auto;width:100%}
   .field-grid,.details{grid-template-columns:repeat(2,minmax(0,1fr))}
   .field.wide{grid-column:1/-1}
   .panel-content,.panel-header,.form-section{padding:1.2rem}
+}
+@media(min-width:700px){
+  .users-panel .user-toolbar{grid-template-columns:minmax(0,1fr) auto auto}
+  .users-panel .user-toolbar-admin{grid-template-columns:minmax(0,1fr) minmax(8rem,10rem) auto auto}
+  .user-toolbar-admin .user-search,.user-count{grid-column:auto}
 }
 @media(min-width:820px){
   .frame{display:grid;grid-template-columns:232px minmax(0,1fr)}
@@ -382,7 +414,6 @@ textarea{resize:vertical}
 @media(max-width:819px){
   .option-tab{flex:1 1 0;gap:.28rem;padding-inline:.28rem;font-size:.82rem;min-width:0}
   .option-tab .icon{width:15px;height:15px}
-  .scoped-user-table .user-row .data-action{grid-row:2;grid-column:2}
   .option-entry{align-items:center;flex-wrap:nowrap}
   .option-entry-heading{flex:1 1 auto;flex-wrap:wrap;justify-content:flex-start}
   .option-desktop-actions{display:none}
