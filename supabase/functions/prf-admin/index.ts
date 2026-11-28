@@ -37,7 +37,7 @@ Deno.serve(async (req: Request) => {
       const ids = data.users.map(account => account.id);
       if (!ids.length) break;
       const { data: profiles, error: profileError } = await db.from('staff')
-        .select('id,name,account_role,active,branch_id,supervisor_override,hrd_override').in('id', ids);
+        .select('id,name,account_role,active,branch_id,supervisor_override,hrd_override,can_override_approval').in('id', ids);
       if (profileError) return reply({ error: 'Could not load PRF staff profiles.' }, 500);
       const { data: memberships, error: membershipError } = await db.from('staff_branch_memberships')
         .select('staff_id,branch_id').in('staff_id', ids).order('branch_id');
@@ -54,6 +54,7 @@ Deno.serve(async (req: Request) => {
         accounts.push({
           id: account.id, email: account.email ?? '', name: profile?.name ?? '',
           role: profile?.account_role ?? '', active: profile?.active ?? null,
+          can_override_approval: profile?.can_override_approval ?? false,
           branch_id: profile?.branch_id ?? '',
           branch_ids: assigned.get(account.id) ?? [],
           branch: (assigned.get(account.id) ?? []).map(id => branchNames.get(id)).filter(Boolean).join(', '),
@@ -138,7 +139,11 @@ Deno.serve(async (req: Request) => {
     if (error) return reply({ error: 'Could not check the selected branches.' }, 500);
     if (count !== branchIds.length) return reply({ error: 'Choose active branches.' }, 400);
   }
-  const profile = { name, branch_id: branch.id, ...(branchIds ? { branch_ids: branchIds } : {}), role, active, supervisor_id, hrd_id };
+  if (values.can_override_approval !== undefined && typeof values.can_override_approval !== 'boolean') {
+    return reply({ error: 'Choose a valid approval override permission.' }, 400);
+  }
+  const profile = { name, branch_id: branch.id, ...(branchIds ? { branch_ids: branchIds } : {}), role, active, supervisor_id, hrd_id,
+    ...(values.can_override_approval === undefined ? {} : { can_override_approval: values.can_override_approval }) };
   if (action === 'save') {
     const { error } = await db.rpc('prf_save_staff', { user_id: id, profile });
     if (error?.code === 'P0001') return reply({ error: error.message }, 409);
