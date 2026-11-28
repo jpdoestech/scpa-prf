@@ -4,7 +4,7 @@ type Delivery = {
   event_id: number;
   lease_id: string;
   snapshot: Record<'requester' | 'branch' | 'position' | 'headcount' | 'area' | 'needed' | 'requisition' | 'assignment', string>
-    & { number: string | null };
+    & { number: string | null; needed_to?: string | null };
   attempts: number;
   event: Record<string, string>;
 };
@@ -98,7 +98,7 @@ async function syncSheet(items: Delivery[]) {
       range: `${range}!A${event_id + 1}:Q${event_id + 1}`,
       values: [[event_id, timestamp, s.number ?? '', e.request_id, e.action, e.stage, e.previous_status ?? '',
         e.status, e.actor_name, s.requester, s.branch, s.position, Number(s.headcount), s.area,
-        s.needed, s.requisition, s.assignment]],
+        s.needed_to && s.needed_to !== s.needed ? `${s.needed} to ${s.needed_to}` : s.needed, s.requisition, s.assignment]],
     });
   }
   await fetchJSON(`${spreadsheet}/values:batchUpdate`, 'Write transaction rows', {
