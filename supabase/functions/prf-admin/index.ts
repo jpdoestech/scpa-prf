@@ -10,6 +10,8 @@ const reply = (body: object, status = 200) => Response.json(body, { headers, sta
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const roles = ['employee', 'supervisor', 'hrd', 'other'];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const prfDate = (value: unknown) => typeof value === 'string' && /^(?:20\d{2}|2100)-\d{2}-\d{2}$/.test(value)
+  && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
@@ -74,6 +76,39 @@ Deno.serve(async (req: Request) => {
   }
 
   const action = values.action ?? 'create';
+  if (action === 'list-prf-records' || action === 'delete-prf-records') {
+    const startOn = values.start_on ?? null;
+    const endBefore = values.end_before ?? null;
+    if ((startOn !== null || endBefore !== null) &&
+      (!prfDate(startOn) || !prfDate(endBefore) || startOn >= endBefore)) {
+      return reply({ error: 'Choose a valid day, month, or year.' }, 400);
+    }
+    if (action === 'list-prf-records') {
+      const offset = values.offset ?? 0;
+      if (!Number.isSafeInteger(offset) || offset < 0) return reply({ error: 'Choose a valid page.' }, 400);
+      const shownAt = new Date().toISOString();
+      let query = db.from('requests').select('id,number,requester_name,status,submitted_at,position:form->>position', { count: 'exact' })
+        .lte('submitted_at', shownAt);
+      if (startOn) query = query.gte('submitted_at', `${startOn}T00:00:00+08:00`).lt('submitted_at', `${endBefore}T00:00:00+08:00`);
+      const { data, count, error } = await query.order('submitted_at', { ascending: false }).order('id').range(offset, offset + 24);
+      if (error) return reply({ error: 'Could not load PRF records.' }, 500);
+      return reply({ rows: data, total: count, shown_at: shownAt });
+    }
+    const selected = values.request_ids ?? null;
+    if (values.confirmed !== true || !Number.isSafeInteger(values.expected_count) || values.expected_count < 1 ||
+      typeof values.shown_at !== 'string' || !Number.isFinite(Date.parse(values.shown_at)) ||
+      (selected !== null && (!Array.isArray(selected) || selected.length > 100 ||
+        selected.some(id => typeof id !== 'string' || !uuid.test(id))))) {
+      return reply({ error: 'Review and confirm the records before deleting.' }, 400);
+    }
+    const { data, error } = await db.rpc('prf_delete_records', {
+      request_ids: selected, start_on: startOn, end_before: endBefore,
+      shown_at: values.shown_at, expected_count: values.expected_count,
+    });
+    if (error?.code === 'P0001') return reply({ error: error.message }, 409);
+    if (error) return reply({ error: 'Could not delete the PRF records.' }, 500);
+    return reply({ deleted: data });
+  }
   if (action === 'create-branch') {
     const branchName = text(values.branch_name);
     if (!branchName || branchName.length > 100) return reply({ error: 'Enter a branch name of 1 to 100 characters.' }, 400);
