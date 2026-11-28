@@ -82,13 +82,50 @@ Deno.serve(async (req: Request) => {
     if (error) return reply({ error: 'Could not add this branch.' }, 500);
     return reply({ branch: data }, 201);
   }
-  if (!['create', 'save', 'reset'].includes(action)) return reply({ error: 'Unsupported action.' }, 400);
+  if (!['create', 'save', 'reset', 'delete'].includes(action)) return reply({ error: 'Unsupported action.' }, 400);
   const id = text(values.account_id);
   const password = typeof values.password === 'string' ? values.password : '';
-  if (action !== 'save' && (password.length < 12 || new TextEncoder().encode(password).length > 72)) {
+  if (['create', 'reset'].includes(action) && (password.length < 12 || new TextEncoder().encode(password).length > 72)) {
     return reply({ error: 'Use a password of at least 12 characters and no more than 72 bytes.' }, 400);
   }
   if (action !== 'create' && !uuid.test(id)) return reply({ error: 'Choose a user account.' }, 400);
+
+  if (action === 'delete') {
+    const { data, error } = await db.auth.admin.getUserById(id);
+    if (error?.status === 404) return reply({ id });
+    if (error || !data.user) return reply({ error: 'Could not check the user account.' }, 500);
+    if (data.user.app_metadata.prf_super_admin === true) {
+      return reply({ error: 'Super-admin accounts are protected.' }, 403);
+    }
+    const { data: linked, error: checkError } = await db.from('requests').select('id')
+      .or(`requester_id.eq.${id},supervisor_id.eq.${id},hrd_id.eq.${id}`).limit(1);
+    if (checkError) return reply({ error: 'Could not check the account’s PRF history.' }, 500);
+    if (linked.length) return reply({ error: 'This account is linked to PRF history. Account deletion is available once no PRFs reference it.' }, 409);
+
+    const avatars = db.storage.from('prf-avatars');
+    const path = `${data.user.id}/avatar.jpg`;
+    const { data: files, error: listError } = await avatars.list(data.user.id, { search: 'avatar.jpg', limit: 10 });
+    if (listError) return reply({ error: 'Could not check the profile photo.' }, 500);
+    let photo: Blob | null = null;
+    if (files.some(file => file.name === 'avatar.jpg')) {
+      const { data: original, error: photoError } = await avatars.download(path);
+      if (photoError || !original) return reply({ error: 'Could not prepare the profile photo for deletion.' }, 500);
+      photo = original;
+      const { error: removeError } = await avatars.remove([path]);
+      if (removeError) return reply({ error: 'Could not remove the profile photo.' }, 500);
+    }
+
+    const { error: deleteError } = await db.auth.admin.deleteUser(id, false);
+    if (!deleteError || deleteError.status === 404) return reply({ id });
+    const { data: current, error: statusError } = await db.auth.admin.getUserById(id);
+    if (statusError?.status === 404) return reply({ id });
+    if (statusError || !current.user) return reply({ error: 'Could not confirm account deletion. Refresh Users and check the account.' }, 500);
+    if (photo) {
+      const { error: restoreError } = await avatars.upload(path, photo, { contentType: 'image/jpeg' });
+      if (restoreError) return reply({ error: 'The account still exists. Its profile photo could not be restored.' }, 500);
+    }
+    return reply({ error: 'Supabase could not delete the account. Check for linked records or owned Storage objects.' }, 409);
+  }
 
   if (action === 'reset') {
     const { data, error } = await db.auth.admin.getUserById(id);
