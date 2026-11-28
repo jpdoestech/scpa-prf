@@ -429,6 +429,7 @@ let adminDirty = false;
 let prfRecordReview;
 const roleLabels = { employee: 'Officer/Agent', coordinator: 'Coordinator', supervisor: 'Supervisor', hrd: 'HRD approver', other: 'Other staff' };
 const userRole = account => account.superAdmin ? 'Super admin' : roleLabels[account.role] ?? 'Unassigned';
+const accountAccessBadge = account => `<span class="badge ${account.active === true ? 'approved' : account.active === false ? 'disapproved' : ''}">${account.active === true ? 'Active' : account.active === false ? 'Inactive' : 'Profile pending'}</span>`;
 
 function renderUserRows() {
   const term = adminSearch.trim().toLowerCase();
@@ -442,14 +443,13 @@ function renderUserRows() {
     : `${matches.length} of ${managedAccounts.length} accounts`;
   document.getElementById('user-results').innerHTML = matches.length ? matches.map(account => {
     const label = account.name || (account.superAdmin ? 'Super administrator' : account.email);
-    const status = account.active === null ? 'Profile pending' : account.active ? 'Active' : 'Inactive';
     const action = person.superAdmin ? 'Manage' : 'Edit branches';
     return `<tr class="user-row" role="row">
       <td class="user-account" role="cell"><span class="user-identity"><span class="avatar user-avatar" aria-hidden="true">${escape(initials(label))}</span>
         <span><strong>${escape(label)}</strong><small>${label === account.email ? '' : escape(account.email)}</small></span></span></td>
       ${person.superAdmin ? `<td class="user-role" role="cell">${escape(userRole(account))}</td>` : ''}
       <td class="user-branch" role="cell"><span class="user-location">${icon('pin')}<span>${escape(account.branch || 'No branch')}</span></span></td>
-      ${person.superAdmin ? `<td class="user-status" role="cell"><span class="badge ${account.active ? 'approved' : account.active === false ? 'disapproved' : ''}">${status}</span></td>` : ''}
+      ${person.superAdmin ? `<td class="user-status" role="cell">${accountAccessBadge(account)}</td>` : ''}
       <td class="data-action" role="cell">${button('manage-user', action, 'secondary row-button', 'edit',
         `data-id="${escape(account.id)}" aria-label="${action}${person.superAdmin ? '' : ' for'} ${escape(label)}"`)}</td></tr>`;
   }).join('') : `<tr class="empty-row" role="row"><td class="empty" role="cell" colspan="${person.superAdmin ? 5 : 3}">${managedAccounts.length
@@ -457,8 +457,9 @@ function renderUserRows() {
 }
 
 function assignmentChecklist(name, label, options, assigned, wide = '') {
+  const glyph = { branch_ids: 'building', supervisor_ids: 'users', hrd_ids: 'check', officer_ids: 'users' }[name];
   return `<details name="profile-assignments" class="assignment-picker ${wide}">
-    <summary><strong>${escape(label)}</strong><span data-assignment-count>${assigned.length} selected</span></summary>
+    <summary>${icon(glyph)}<strong>${escape(label)}</strong><span data-assignment-count>${assigned.length} selected</span></summary>
     <fieldset aria-label="${escape(label)}" class="assignment-checklist">
       ${options.length ? options.map(option => `<label class="branch-check">
         <input type="checkbox" name="${name}" value="${escape(option.id)}" ${assigned.includes(option.id) ? 'checked' : ''}>
@@ -473,10 +474,10 @@ function branchCheckboxes(branches, assigned) {
 }
 
 function renderEmployeeBranches(account, branches) {
-  return `${backButton('admin', 'Back to users')}
-    <div class="heading"><div><h1 tabindex="-1">Edit branches</h1><p>${escape(account.name)}</p></div></div>
-    <section class="panel panel-content branch-editor">
-      <form class="sheet" id="employee-branches-form" data-id="${escape(account.id)}">
+  return `<div class="heading register-heading account-editor-heading"><div><h1 tabindex="-1">Edit branches</h1><p>${escape(account.name)}</p></div>${backButton('admin', 'Back to users')}</div>
+    <section class="panel request-panel branch-editor" aria-labelledby="account-branches-heading">
+      <h2 id="account-branches-heading">${icon('building')}Branch assignments</h2>
+      <form class="account-form" id="employee-branches-form" data-id="${escape(account.id)}">
         ${branchCheckboxes(branches, account.branch_ids)}
         <div class="actions">${submitButton('Save branches', 'check')}</div>
       </form>
@@ -502,44 +503,46 @@ function renderAccountForm(account, approvers, branches, branchField) {
   };
   const password = label => field('account-password', label,
     '<input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="72" required><small>Use at least 12 characters. Share the password privately.</small>', 'wide');
-  return `${backButton('admin', 'Back to users')}
-    <div class="heading"><div><h1 tabindex="-1">${creating ? 'New user' : 'Manage account'}</h1>
-      <p>${creating ? 'Create an account and its PRF profile.' : escape(account.email)}</p></div></div>
-    <div class="admin-panels">
-      <section class="panel panel-content admin-editor"><h2>${creating ? 'Account details' : 'PRF profile'}</h2>
-      <form id="admin-form" class="sheet">
+  return `<div class="heading register-heading account-editor-heading"><div><h1 tabindex="-1">${creating ? 'New user' : 'Manage account'}</h1>
+      ${creating ? '' : `<div class="request-editor-context">${accountAccessBadge(account)}<p>${escape(account.email)}</p></div>`}</div>${backButton('admin', 'Back to users')}</div>
+    <div class="admin-panels${creating ? ' account-create-layout' : ''}">
+      <section class="panel request-panel account-editor" aria-labelledby="account-profile-heading"><h2 id="account-profile-heading">${icon('users')}${creating ? 'Account details' : 'PRF profile'}</h2>
+      <form id="admin-form" class="account-form">
         <input type="hidden" name="action" value="${creating ? 'create' : 'save'}">
         ${creating ? '' : `<input type="hidden" name="account_id" value="${escape(account.id)}">`}
         <div class="field-grid">
           ${field('account-name', 'Full name', `<input name="name" value="${escape(current.name)}" maxlength="100" required>`)}
           ${creating ? field('account-email', 'Email', '<input type="email" name="email" maxlength="254" autocomplete="off" required>') : ''}
           <input type="hidden" name="branch_id" value="${escape(current.branch_id)}">
-          ${branchCheckboxes(branches, assigned)}
           ${field('account-role', 'Role', `<select name="role" required><option value="">Choose a role</option>${Object.entries(roleLabels).map(([id, label]) => `<option value="${id}" ${selected('role', id)}>${label}</option>`).join('')}</select>`)}
           ${creating ? '' : field('account-active', 'PRF access', `<select name="active"><option value="true"${current.active !== false ? ' selected' : ''}>Active</option><option value="false"${current.active === false ? ' selected' : ''}>Inactive</option></select>`)}
+          ${creating ? password('Initial password') : ''}
+        </div>
+        <fieldset class="account-assignments"><legend>Assignments</legend><div class="account-assignment-fields">
+          ${branchCheckboxes(branches, assigned)}
           <label class="branch-check approval-override-control wide" ${['supervisor', 'hrd'].includes(current.role) ? '' : 'hidden'}>
             <input type="checkbox" name="can_override_approval" ${current.can_override_approval ? 'checked' : ''}>
             <span><strong>Allow approval override</strong><small>Can skip the other approval step on assigned PRFs. A reason is required.</small></span>
           </label>
-          <div class="field-grid wide" data-approval-rosters ${current.role === 'coordinator' ? 'hidden' : ''}>
+          <div class="field-grid account-rosters" data-approval-rosters ${current.role === 'coordinator' ? 'hidden' : ''}>
             ${approver('Assigned supervisors', 'supervisor')}
             ${approver('Assigned HRD approvers', 'hrd')}
             <p class="muted small wide">One assigned approver per stage can act within the request’s branch.</p>
           </div>
-          <div class="field-grid wide" data-coordinator-profile ${current.role === 'coordinator' ? '' : 'hidden'}>
+          <div class="account-assignment-fields" data-coordinator-profile ${current.role === 'coordinator' ? '' : 'hidden'}>
             ${assignmentChecklist('officer_ids', 'Assigned Officer/Agent accounts', officers, officerIds, 'wide')}
             <p class="muted small wide" data-no-officers hidden>No active Officer/Agent accounts share the selected branches.</p>
             ${field('officer-approval', 'Officer/Agent approval', `<select name="require_officer_approval">
-              <option value="true">Require Officer/Agent approval</option>
-              <option value="false" ${current.require_officer_approval === false ? 'selected' : ''}>Auto-approve the Officer/Agent step</option>
+              <option value="true">Require approval</option>
+              <option value="false" ${current.require_officer_approval === false ? 'selected' : ''}>Auto-approve this step</option>
             </select><small>Requests use the selected Officer/Agent’s Supervisor and HRD approvers.</small>`, 'wide')}
           </div>
-          ${creating ? password('Initial password') : ''}
-        </div><div class="actions">${creating ? submitButton('Create account', 'plus') : submitButton('Save changes', 'check')}</div>
+        </div></fieldset><div class="actions">${creating ? submitButton('Create account', 'plus') : submitButton('Save changes', 'check')}</div>
       </form></section>
-      ${creating || account.superAdmin ? '' : `<section class="panel panel-content admin-editor"><h2>Password reset</h2><form id="admin-form-reset" class="sheet"><input type="hidden" name="action" value="reset"><input type="hidden" name="account_id" value="${escape(account.id)}">${password('New password')}<div class="actions">${submitButton('Reset password', 'lock', 'secondary')}</div></form>
-        <div class="admin-delete"><h2>Delete account</h2><p class="muted small">Permanently remove this account and its sign-in.</p>
+      ${creating || account.superAdmin ? '' : `<section class="panel request-panel account-security" aria-labelledby="account-security-heading"><h2 id="account-security-heading">${icon('lock')}Account security</h2><div><form id="admin-form-reset" class="account-form"><h3>Password reset</h3><input type="hidden" name="action" value="reset"><input type="hidden" name="account_id" value="${escape(account.id)}">${password('New password')}<div class="actions">${submitButton('Reset password', 'lock', 'secondary')}</div></form>
+        <div class="admin-delete"><h3>Delete account</h3><p class="muted small">Permanently remove this account and its sign-in.</p>
           ${button('delete-user', 'Delete account', 'danger', 'close', `data-id="${escape(account.id)}" aria-haspopup="dialog"`)}</div>
+        </div>
       </section>`}
     </div>`;
 }
@@ -557,7 +560,9 @@ function updateCoordinatorProfile(form) {
   for (const input of panel.querySelectorAll('input[name="officer_ids"]')) {
     input.closest('label').hidden = !input.checked && !eligible.has(input.value);
   }
-  panel.querySelector('[data-no-officers]').hidden = eligible.size > 0;
+  const hint = panel.querySelector('[data-no-officers]');
+  hint.hidden = eligible.size > 0;
+  hint.textContent = branchIds.size ? 'No active Officer/Agent accounts share the selected branches.' : 'Select a branch to see its Officer/Agent accounts.';
 }
 
 function renderBranchForm() {
@@ -1331,8 +1336,12 @@ app.addEventListener('click', async e => {
       ${optionDialogFooter('discard', 'Discard changes', 'close', true)}`, target, { alert: true });
     if (!discard) return;
   }
-  if (adminDirty && !window.confirm('Discard unsaved account changes?')) return;
-  adminDirty = false;
+  if (adminDirty && ['admin', 'requests', 'inbox', 'profile', 'signout'].includes(action)) {
+    const discard = await optionDialog('Discard account changes?', `<p id="option-dialog-description">Your unsaved changes will be lost.</p>
+      ${optionDialogFooter('discard', 'Discard changes', 'close', true)}`, target, { alert: true });
+    if (!discard) return;
+    adminDirty = false;
+  }
   if (action === 'density') {
     compact = !compact;
     const density = compact ? 'compact' : 'comfortable';
@@ -1434,6 +1443,7 @@ app.addEventListener('click', async e => {
       { save: () => adminAccounts({ action: 'delete', account_id: id }) });
     if (confirmed) {
       adminDirectory = null;
+      adminDirty = false;
       adminLauncher = '';
       await openAdmin('', 'Account deleted.');
     }

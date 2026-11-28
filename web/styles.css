@@ -293,6 +293,18 @@ textarea{resize:vertical}
   .user-status{justify-self:end}
 }
 .admin-panels{display:grid;gap:1rem;align-items:start}
+.account-editor-heading .back{margin:0;padding-inline:.65rem}
+.account-create-layout{max-width:57rem}
+.account-form,.account-assignment-fields{display:grid;gap:.65rem;min-width:0}
+.account-form .field-grid{gap:.65rem .75rem}
+.account-form .field{gap:.27rem;line-height:1.35}
+.account-form :is(input,select){min-width:0}
+.account-assignments{min-width:0;margin:.2rem 0 0;padding:.45rem .6rem .65rem;border:1px solid var(--line);border-radius:9px}
+.account-assignments legend{padding-inline:.25rem;color:var(--deep);font-size:.88rem;font-weight:800}
+.account-rosters>p{grid-column:1/-1}
+.account-form>.actions{justify-content:flex-end;border-top:1px solid var(--line);padding-top:.65rem}
+.account-security h3{font-size:.93rem;letter-spacing:normal;color:var(--deep)}
+.account-security .account-form>.actions{justify-content:flex-start;padding:0;border:0}
 .admin-editor h2{margin-bottom:1rem}
 .branch-editor{max-width:31rem}
 .admin-editor .actions{padding-top:.8rem;border-top:1px solid var(--line)}
@@ -329,13 +341,21 @@ textarea{resize:vertical}
 .option-tab[aria-selected=true]{color:var(--deep);border-color:var(--control-border);background:var(--white)}
 .option-tab .icon{width:16px;height:16px}
 .option-tab[aria-selected=true] .icon{color:var(--green)}
-.assignment-picker{min-width:0;border:1px solid #c8d7ce;border-radius:9px;background:#fff}
-.assignment-picker summary{display:flex;align-items:center;gap:.5rem;min-height:44px;padding:.5rem .7rem;cursor:pointer;list-style:none;font-size:.88rem}
+.assignment-picker{min-width:0;border:1px solid var(--control-border);border-radius:9px;background:var(--white)}
+.assignment-picker summary{display:flex;align-items:center;gap:.4rem;min-height:44px;padding:.4rem .52rem;cursor:pointer;list-style:none;font-size:.85rem;line-height:1.35}
+.assignment-picker summary>strong{min-width:0;overflow-wrap:break-word}
+.assignment-picker summary>.icon{width:16px;height:16px;color:var(--green)}
+.assignment-picker[open] summary{background:var(--surface-subtle);border-radius:8px 8px 0 0}
 .assignment-picker summary::-webkit-details-marker{display:none}
 .assignment-picker summary::after{content:"";width:.42rem;height:.42rem;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin:0 .15rem .18rem .08rem;flex:none}
 .assignment-picker[open] summary::after{transform:rotate(225deg);margin-block:.18rem 0}
-.assignment-picker [data-assignment-count]{margin-inline-start:auto;color:var(--muted);white-space:nowrap}
-.assignment-checklist{min-width:0;margin:0;padding:.15rem .7rem;border:0;border-top:1px solid var(--line);max-height:15rem;overflow:auto;overscroll-behavior:contain}
+.assignment-picker [data-assignment-count]{margin-inline-start:auto;padding:.15rem .38rem;border-radius:999px;background:var(--surface-subtle);color:var(--deep);font-size:.75rem;font-weight:700;white-space:nowrap}
+.assignment-picker[open] [data-assignment-count]{background:var(--white)}
+.assignment-checklist{min-width:0;margin:0;padding:.25rem;border:0;border-top:1px solid var(--line);max-height:15rem;overflow:auto;overscroll-behavior:contain}
+.assignment-checklist>.branch-check{border-radius:6px;padding:.32rem .44rem;cursor:pointer;font-size:.88rem;line-height:1.4}
+.assignment-checklist>.branch-check:has(:checked){background:#e8f3ed;color:var(--deep)}
+.assignment-checklist>.branch-check:focus-within{outline:2px solid var(--green);outline-offset:-2px}
+.assignment-checklist>.small{padding:.42rem}
 .branch-check{min-height:44px;display:flex;align-items:center;gap:.55rem;overflow-wrap:anywhere}
 .branch-check input[type=checkbox]{width:19px;height:19px;min-height:0;margin:0;flex:none;accent-color:var(--green)}
 .approval-override-control{padding:.55rem .7rem;border:1px solid var(--line);border-radius:9px;background:#f7faf8;cursor:pointer}
@@ -407,7 +427,7 @@ textarea{resize:vertical}
   .select-menu [role=option]{min-height:36px}
 }
 @media(min-width:1160px){
-  .admin-panels:has(.admin-editor + .admin-editor){grid-template-columns:minmax(0,1fr) minmax(16rem,.55fr)}
+  .admin-panels:has(.account-security){grid-template-columns:minmax(0,1fr) minmax(16rem,.55fr)}
 }
 [hidden]{display:none!important}
 #print-preview{width:min(100%,var(--paper-width,210mm));margin-inline:auto;padding:.75rem}
