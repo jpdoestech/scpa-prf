@@ -723,7 +723,7 @@ function formView(options) {
       <section class="panel form-section"><h2>Personnel needed</h2><div class="field-grid">
         ${requestOptionFields(options, { ...values, branch: edit?.branch_name ?? person.branch })}
         ${input('needed', 'Date needed', 'date', 'required')}
-        ${input('headcount', 'Number of personnel', 'number', 'inputmode="numeric" min="1" max="9999" step="1" required')}
+        ${input('headcount', 'Number of personnel', 'text', 'inputmode="numeric" pattern="[1-9][0-9]{0,3}" title="Enter a whole number from 1 to 9,999." required')}
       </div></section>
       <section class="panel form-section"><h2>Assignment</h2><div class="field-grid">
         ${select('service', 'Service time frame', services)}
@@ -1123,6 +1123,12 @@ app.addEventListener('change', async e => {
   }
 });
 app.addEventListener('input', e => {
+  if (e.target.name === 'headcount' && e.target.form?.id === 'request-form' && !e.isComposing) {
+    const value = e.target.value.normalize('NFKC').trim()
+      .replace(/[٠-٩۰-۹]/g, digit => String('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹'.indexOf(digit) % 10))
+      .replace(/^0+(?=\d)/, '');
+    if (value !== e.target.value) e.target.value = value;
+  }
   if (e.target.form?.id.match(/^(admin-form|employee-branches-form)/) && !e.target.matches('.search-select input')) adminDirty = true;
   if (e.target.id === 'user-search') {
     adminSearch = e.target.value;

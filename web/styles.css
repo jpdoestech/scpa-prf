@@ -392,6 +392,7 @@ textarea{resize:vertical}
   .nav .pending-count{position:absolute;top:.12rem;left:calc(50% + .38rem);min-width:1.05rem;padding:.08rem .22rem;font-size:.64rem}
   .frame .page{padding-bottom:calc(var(--mobile-tab-height) + env(safe-area-inset-bottom) + 3.9rem)}
   .scroll-top{bottom:calc(var(--mobile-tab-height) + env(safe-area-inset-bottom) + .8rem)}
+  .frame:has(#request-form) .scroll-top{display:none}
 }
 @media(min-width:1050px){
   .register-inbox .panel-header{grid-template-columns:minmax(8rem,1fr) minmax(12rem,auto) minmax(10rem,auto) auto}
