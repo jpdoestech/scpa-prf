@@ -384,6 +384,7 @@ let adminListPosition = 0;
 let adminSearch = '';
 let adminLauncher = '';
 let adminDirty = false;
+let prfRecordReview;
 const roleLabels = { employee: 'Employee', supervisor: 'Supervisor', hrd: 'HRD approver', other: 'Other staff' };
 
 function renderUserRows(term = '') {
@@ -524,7 +525,7 @@ async function openAdmin(view = '', message = '') {
       renderFrame(`<div class="heading register-heading"><h1 tabindex="-1">Users</h1>
         <div class="actions">${person.superAdmin && hasBranchDirectory ? button('new-branch', 'Add branch', 'secondary', 'plus') : ''}
           ${button('request-options', 'Request options', 'secondary', 'list')}
-          ${person.superAdmin ? button('new-user', 'New user', 'primary', 'plus') : ''}</div></div>
+          ${person.superAdmin ? button('manage-prf-records', 'Manage PRF records', 'secondary', 'archive') + button('new-user', 'New user', 'primary', 'plus') : ''}</div></div>
         <section class="panel users-panel" aria-label="User accounts">
           <header class="panel-header"><h2 id="user-count" aria-live="polite">Accounts</h2>
             <label class="search user-search">${icon('search')}
@@ -553,6 +554,95 @@ async function openAdmin(view = '', message = '') {
       banner(err.message, true);
     }
   }
+}
+
+const prfPeriods = { all: 'All dates', day: 'Day', month: 'Month', year: 'Year' };
+const prfPeriodInputs = {
+  day: 'type="date" min="2000-01-01" max="2099-12-31"',
+  month: 'type="month" min="2000-01" max="2099-12" pattern="20[0-9]{2}-[0-9]{2}" placeholder="YYYY-MM"',
+  year: 'type="number" min="2000" max="2099" step="1" placeholder="YYYY"',
+};
+
+function prfPeriodField(period, value = '') {
+  return prfPeriodInputs[period] ? field('record-date', prfPeriods[period],
+    `<input name="period_value" ${prfPeriodInputs[period]} value="${escape(value)}" required>`) : '';
+}
+
+function prfRecordRange(period, value) {
+  if (period === 'all') return {};
+  const start = period === 'year' ? `${value}-01-01` : period === 'month' ? `${value}-01` : value;
+  const end = new Date(`${start}T00:00:00Z`);
+  if (!/^20\d{2}-\d{2}-\d{2}$/.test(start) || !Number.isFinite(+end) || end.toISOString().slice(0, 10) !== start) {
+    throw new Error('Choose a valid day, month, or year.');
+  }
+  if (period === 'year') end.setUTCFullYear(end.getUTCFullYear() + 1);
+  else if (period === 'month') end.setUTCMonth(end.getUTCMonth() + 1);
+  else end.setUTCDate(end.getUTCDate() + 1);
+  return { start_on: start, end_before: end.toISOString().slice(0, 10) };
+}
+
+async function openPrfRecords(period = 'all', value = '', offset = 0, message = '') {
+  const token = ++routeRevision;
+  screen = 'admin';
+  prfRecordReview = null;
+  renderFrame(`${backButton('admin', 'Back to users')}<div class="heading"><h1 tabindex="-1">Manage PRF records</h1></div>
+    <section class="panel panel-content"><form id="prf-record-filter" class="prf-record-filter">
+      ${field('record-period', 'Filter by submission date', `<select name="period">${Object.entries(prfPeriods).map(([key, label]) =>
+        `<option value="${key}"${period === key ? ' selected' : ''}>${label}</option>`).join('')}</select>`)}
+      <div id="prf-period-field">${prfPeriodField(period, value)}</div>
+      ${submitButton('Show records', 'search', 'secondary')}
+    </form></section><section id="prf-record-results" class="panel" aria-label="PRF records" aria-busy="true"><p class="empty" role="status">Loading PRF records…</p></section>`);
+  if (!offset) window.scrollTo(0, 0);
+  app.querySelector('h1')?.focus({ preventScroll: true });
+  try {
+    const range = prfRecordRange(period, value);
+    const { rows, total, shown_at } = await adminAccounts({ action: 'list-prf-records', ...range, offset });
+    if (token !== routeRevision) return;
+    const scope = period === 'all' ? 'All dates' : `${prfPeriods[period]} ${value} (Manila)`;
+    prfRecordReview = { period, value, offset, range, total, shown_at, scope };
+    const results = document.getElementById('prf-record-results');
+    results.removeAttribute('aria-busy');
+    results.innerHTML = `<header class="prf-record-toolbar"><div><h2>${escape(scope)}</h2><p class="muted small">${total} ${total === 1 ? 'PRF' : 'PRFs'}</p></div>
+      ${rows.length ? `<div class="actions">
+        ${button('delete-prf-selected', 'Delete selected', 'danger', 'close', 'disabled')}
+        ${period !== 'all' ? button('delete-prf-period', 'Delete all matches', 'danger', 'close') : ''}
+      </div>` : ''}</header>
+      ${rows.length ? `<table class="data-table prf-admin-table" role="table" aria-label="PRFs matching the filter"><thead role="rowgroup"><tr role="row">
+        <th scope="col" role="columnheader">Select</th><th scope="col" role="columnheader">Request</th><th scope="col" role="columnheader">Date requested</th><th scope="col" role="columnheader">Status</th>
+      </tr></thead><tbody role="rowgroup">${rows.map(row => `<tr role="row">
+        <td class="prf-record-check" role="cell"><label><input type="checkbox" name="prf-record" value="${escape(row.id)}" aria-label="Select ${escape(row.number ?? row.position)}"></label></td>
+        <td class="prf-record-label" role="cell"><strong>${escape(row.position)}</strong><small>${escape(row.number ?? 'Not yet issued')} · ${escape(row.requester_name)}</small></td>
+        <td class="prf-record-date" role="cell">${escape(approvalTime(row.submitted_at, true))}</td><td class="prf-record-state" role="cell">${badge(row.status)}</td>
+      </tr>`).join('')}</tbody></table>
+      <nav class="pagination" aria-label="PRF records pagination"><span>${offset + 1}–${offset + rows.length} of ${total}</span><div class="page-navigation">
+        ${button('prf-record-previous', '', 'secondary page-step', 'back', `aria-label="Previous page" ${offset ? '' : 'disabled'}`)}
+        ${button('prf-record-next', '', 'secondary page-step', 'next', `aria-label="Next page" ${offset + rows.length >= total ? 'disabled' : ''}`)}
+      </div></nav>` : '<p class="empty">No PRF records match this view.</p>'}`;
+    banner(message);
+    if (message) document.getElementById('notice')?.focus({ preventScroll: true });
+  } catch (error) {
+    if (token !== routeRevision) return;
+    const results = document.getElementById('prf-record-results');
+    results.removeAttribute('aria-busy');
+    results.innerHTML = '<p class="empty">PRF records unavailable.</p>';
+    banner(error.message, true);
+  }
+}
+
+async function deletePrfRecords(target, byPeriod) {
+  const review = prfRecordReview;
+  if (!review || (byPeriod && review.period === 'all')) return;
+  const ids = [...app.querySelectorAll('input[name="prf-record"]:checked')].map(input => input.value);
+  const count = byPeriod ? review.total : ids.length;
+  if (!count) return;
+  const label = `${count} ${count === 1 ? 'PRF' : 'PRFs'}`;
+  const confirmed = await optionDialog(`Permanently delete ${label}?`, `<p id="option-dialog-description">
+    ${byPeriod ? `Delete all matching records for <strong>${escape(review.scope)}</strong>. ` : ''}This removes the PRFs and their approval and correction history from the app.</p>
+    ${optionDialogFooter('delete', `Delete ${label}`, 'close', true)}`, target, { save: () => adminAccounts({
+      action: 'delete-prf-records', ...(byPeriod ? review.range : { request_ids: ids }),
+      expected_count: count, shown_at: review.shown_at, confirmed: true,
+    }) });
+  if (confirmed) await openPrfRecords(review.period, review.value, 0, `${label} deleted.`);
 }
 
 function requestOptionField(kind, label, addLabel, names, selected) {
@@ -971,7 +1061,11 @@ async function start() {
 
 app.addEventListener('change', async e => {
   const target = e.target;
-  if (target.id === 'demo-role') {
+  if (target.form?.id === 'prf-record-filter' && target.name === 'period') {
+    document.getElementById('prf-period-field').innerHTML = prfPeriodField(target.value);
+  } else if (target.name === 'prf-record') {
+    app.querySelector('[data-action="delete-prf-selected"]').disabled = !app.querySelector('input[name="prf-record"]:checked');
+  } else if (target.id === 'demo-role') {
     setDemoRole(target.value);
     person = await context();
     resetApprovalCount();
@@ -1103,6 +1197,15 @@ app.addEventListener('click', async e => {
     adminLauncher = 'new-user';
     adminDirectory = null;
     await openAdmin('new');
+  } else if (action === 'manage-prf-records' && person?.superAdmin) {
+    adminListPosition = window.scrollY;
+    adminLauncher = 'manage-prf-records';
+    await openPrfRecords();
+  } else if (['prf-record-previous', 'prf-record-next'].includes(action) && person?.superAdmin && prfRecordReview) {
+    const { period, value, offset } = prfRecordReview;
+    await openPrfRecords(period, value, Math.max(0, offset + (action === 'prf-record-next' ? 25 : -25)));
+  } else if (['delete-prf-selected', 'delete-prf-period'].includes(action) && person?.superAdmin) {
+    await deletePrfRecords(target, action === 'delete-prf-period');
   } else if (action === 'new-branch' && person?.superAdmin) {
     adminListPosition = window.scrollY;
     adminLauncher = 'new-branch';
@@ -1273,6 +1376,10 @@ app.addEventListener('submit', async event => {
   const form = event.target;
   const formData = new FormData(form);
   const values = Object.fromEntries(formData);
+  if (form.id === 'prf-record-filter' && person?.superAdmin) {
+    await openPrfRecords(values.period, values.period_value ?? '');
+    return;
+  }
   if (form.id === 'add-directory-option' || (form.id === 'admin-form-branch' && person?.superAdmin)) {
     const fromUsers = form.id === 'admin-form-branch';
     const name = (fromUsers ? values.branch_name : values.name).trim();
