@@ -86,93 +86,117 @@ function formSection(context, name, draw) {
     }
     return y + 19;
   }
-  const height = draw({ add, text, rule, fields, choices });
+  const height = draw({ add, text, rule, field, fields, choices });
   svg.setAttribute('viewBox', '0 0 ' + formWidth + ' ' + height);
   return { svg, height };
 }
 
 async function originalForm(row) {
   const f = row.form;
-  const svg = svgNode('svg', { viewBox: '30 469 552 465', role: 'img', 'aria-label': 'SCPA Personnel Requisition Form' });
-  svg.append(svgNode('image', { x: 30, y: 469, width: 552, height: 465, href: await embeddedImage(originalTemplate) }));
-  const notes = [];
+  const artwork = await embeddedImage(originalTemplate);
+  const context = document.createElement('canvas').getContext('2d');
+  context.font = '8.8px Arial, sans-serif';
+  const marks = [];
+  const continuations = new Map();
 
-  const canvas = document.createElement('canvas').getContext('2d');
-  function addExtra(label, value) {
-    if (!value) return;
-    const line = document.createElement('p');
-    const heading = document.createElement('strong');
-    heading.textContent = `${label} — `;
-    line.append(heading, document.createTextNode(value.trim()));
-    notes.push(line);
+  function originalText(value, x, y) {
+    const node = svgNode('text', { x, y, 'font-family': 'Arial, sans-serif', 'font-size': 8.8, fill: '#111' });
+    node.textContent = value;
+    return node;
   }
-  function line(value, x, y, width, label, secondLine) {
+  function rule(x1, x2, y) {
+    return svgNode('line', { x1, x2, y1: y, y2: y, stroke: '#111', 'stroke-width': .7 });
+  }
+  function line(value, x, y, width, cut, { extend, secondLine } = {}) {
     if (!value) return;
-    const original = value;
-    let text = value.replace(/\s+/g, ' ').trim();
-    const size = 8.8;
-    canvas.font = `${size}px Arial`;
-    if (canvas.measureText(text).width > width && secondLine) {
-      const words = text.split(' ');
-      let first = words.shift();
-      while (words.length && canvas.measureText(`${first} ${words[0]}`).width <= width) first += ` ${words.shift()}`;
-      const rest = words.join(' ');
-      if (canvas.measureText(first).width <= width && rest &&
-        canvas.measureText(rest).width <= secondLine.width) {
-        line(first, x, y, width, label);
-        line(rest, secondLine.x, secondLine.y, secondLine.width, label);
-        return;
-      }
+    const lines = wrapText(context, value, width - 1);
+    const first = lines.shift();
+    marks.push({ node: originalText(first, x, y), y });
+    if (extend && x + context.measureText(first).width > extend.x) {
+      marks.push({ node: rule(extend.x - 1, x + width, extend.y), y: extend.y });
     }
-    if (canvas.measureText(text).width > width) {
-      addExtra(label, original);
-      while (text && canvas.measureText(`${text}…`).width > width) text = text.slice(0, -1);
-      text += '…';
+    if (secondLine && lines.length) {
+      marks.push({ node: originalText(lines.shift(), secondLine.x, secondLine.y), y: secondLine.y });
     }
-    const node = svgNode('text', { x, y, 'font-family': 'Arial, sans-serif', 'font-size': size, fill: '#111' });
-    node.textContent = text;
-    svg.append(node);
+    if (lines.length) {
+      const columns = continuations.get(cut) ?? [];
+      columns.push({ x, width, lines });
+      continuations.set(cut, columns);
+    }
   }
   function check(x, y) {
     if (Number.isFinite(y)) {
-      svg.append(svgNode('rect', { x, y: y - 4.1, width: 6.4, height: 6.4, fill: '#111' }));
+      marks.push({ node: svgNode('rect', { x, y: y - 4.1, width: 6.4, height: 6.4, fill: '#111' }), y });
     }
   }
 
-  line(prfNumber(row), 498, 516.3, 77, 'PRF number');
-  line(row.branch_name, 498, 528.5, 77, 'Branch / Office');
-  line(row.requester_name, 192, 586.7, 158, 'Requester');
-  line(approvalTime(row.submitted_at, true), 436, 587, 137, 'Date requested');
-  line(f.position, 192, 598.4, 158, 'Position');
-  line(neededDateRange(f), 436, 599, 137, 'Date needed');
-  line(f.area, 121, 611.9, 230, 'Assigned area / store');
-  line(f.headcount, 471, 611.9, 102, 'Headcount');
+  line(prfNumber(row), 498, 516.3, 77, 519);
+  line(row.branch_name, 498, 528.5, 77, 532);
+  line(row.requester_name, 192, 586.7, 158, 591);
+  line(approvalTime(row.submitted_at, true), 436, 587, 137, 591);
+  line(f.position, 192, 598.4, 158, 602.5);
+  line(neededDateRange(f), 436, 599, 137, 602.5);
+  line(f.area, 121, 611.9, 230, 615);
+  line(f.headcount, 471, 611.9, 102, 615);
   check(55, { continuous: 652.5, year: 664.3, six_months: 676.1, three_months: 687.9, other: 699.6 }[f.service]);
   check(326, { full_time: 655.8, part_time: 667.5, on_call: 679.1 }[f.assignment]);
   check(55, { new: 734.6, replacement: 746.4, additional: 781.4, other: 793.2 }[f.requisition]);
-  line(f.service_other, 176, 702.4, 77, 'Other service time frame');
+  line(f.service_other, 176, 702.4, 140, 709, { extend: { x: 255, y: 704 } });
+  line(f.assignment_description, 350, 702.4, 222, 709);
   if (f.requisition === 'replacement') {
-    line(f.reason, 335, 747.5, 238, 'Replacement details', { x: 75, y: 764.9, width: 497 });
+    line(f.reason, 335, 747.5, 238, 771, { secondLine: { x: 75, y: 764.9 } });
   } else if (f.requisition === 'additional') {
-    line(f.reason, 265, 784.8, 307, 'Reason for additional personnel');
+    line(f.reason, 265, 784.8, 307, 787.5);
   } else if (f.requisition === 'other') {
-    line(f.reason, 176, 796.2, 77, 'Other requisition details');
+    line(f.reason, 176, 796.2, 397, 801, { extend: { x: 255, y: 798 } });
   }
-  line(f.schedule, 273, 819.3, 298, 'Work schedule');
-  line(f.salary, 188, 831, 190, 'Proposed salary');
-  line(f.allowance, 505, 830.6, 70, 'Allowance');
+  line(f.schedule, 273, 819.3, 299, 822.5, { extend: { x: 353, y: 821 } });
+  line(f.salary, 188, 831, 190, 836);
+  line(f.allowance, 505, 830.6, 70, 836);
   if (row.supervisor_at) {
-    line(row.supervisor_name, 175.5, 900.6, 175, 'Supervisor');
-    line(approvalTime(row.supervisor_at), 393, 900.6, 179, 'Supervisor approval time');
+    line(row.supervisor_name, 175.5, 900.6, 175, 905);
+    line(approvalTime(row.supervisor_at), 393, 900.6, 179, 905);
   }
   if (row.hrd_at) {
-    line(row.hrd_name, 144, 912, 207, 'Authorized HRD officer');
-    line(approvalTime(row.hrd_at), 393, 912, 179, 'HRD approval time');
+    line(row.hrd_name, 144, 912, 207, 920);
+    line(approvalTime(row.hrd_at), 393, 912, 179, 920);
   }
-  addExtra('Work assignment description', f.assignment_description);
-  addExtra('Work assignment remarks', f.assignment_remarks);
-  addExtra('Qualifications', f.qualifications);
-  return { sections: [{ svg, height: 465 }], notes };
+
+  // Open space between the original printed rows without scaling or redrawing the artwork.
+  const bands = continuations.size ? [469, 628, 715, 807, 934] : [469, 934];
+  const sections = [];
+  for (let index = 0; index < bands.length - 1; index++) {
+    const label = index ? 'Original PRF, continued' : 'SCPA Personnel Requisition Form';
+    const svg = svgNode('svg', { role: 'img', 'aria-label': label, xmlns: svgNS });
+    const sourceId = 'original-prf-artwork-' + index;
+    const defs = svgNode('defs', {});
+    defs.append(svgNode('image', { id: sourceId, x: 30, y: 469, width: 552, height: 465, href: artwork }));
+    svg.append(defs);
+    const start = bands[index];
+    const end = bands[index + 1];
+    const cuts = [...continuations.keys()].filter(cut => cut > start && cut < end).sort((a, b) => a - b);
+    let from = start;
+    let top = 0;
+    for (const cut of [...cuts, end]) {
+      const height = cut - from;
+      const panel = svgNode('svg', { x: 30, y: top, width: formWidth, height, viewBox: '30 ' + from + ' ' + formWidth + ' ' + height, overflow: 'hidden' });
+      panel.append(svgNode('use', { href: '#' + sourceId }), ...marks.filter(mark => mark.y >= from && mark.y < cut).map(mark => mark.node));
+      svg.append(panel);
+      top += height;
+      const columns = continuations.get(cut) ?? [];
+      for (const { x, width, lines } of columns) {
+        for (const [i, text] of lines.entries()) {
+          const y = top + 9 + i * 12;
+          svg.append(originalText(text, x, y), rule(x, x + width, y + 2));
+        }
+      }
+      if (columns.length) top += Math.max(...columns.map(column => column.lines.length)) * 12 + 2;
+      from = cut;
+    }
+    svg.setAttribute('viewBox', '30 0 ' + formWidth + ' ' + top);
+    sections.push({ svg, height: top });
+  }
+  return { sections, otherDetails: f.qualifications ? [['Qualifications', f.qualifications]] : [] };
 }
 
 async function wrappedForm(row) {
@@ -194,17 +218,14 @@ async function wrappedForm(row) {
       y = fields(y, ['Requested personnel position title', f.position], ['Date needed', neededDateRange(f)]);
       return fields(y, ['Assigned area / store', f.area], ['No. of personnel requested', f.headcount]);
     }),
-    formSection(context, 'Service time frame and work assignment', ({ choices }) =>
-      Math.max(choices('Service time frame', services, f.service, 2, 11),
-        choices('Work assignment', assignments, f.assignment, 285, 11))),
+    formSection(context, 'Service time frame and work assignment', ({ choices, field }) => {
+      let serviceY = choices('Service time frame', services, f.service, 2, 11);
+      let assignmentY = choices('Work assignment', assignments, f.assignment, 285, 11);
+      if (f.service_other) serviceY = field('Specify service time frame', f.service_other, 2, serviceY, 265);
+      if (f.assignment_description) assignmentY = field('Brief description', f.assignment_description, 285, assignmentY, 265);
+      return Math.max(serviceY, assignmentY);
+    }),
   ];
-  for (const [label, value] of [
-    ['Other service time frame', f.service_other],
-    ['Work assignment description', f.assignment_description],
-    ['Work assignment remarks', f.assignment_remarks],
-  ]) {
-    if (value) sections.push(formSection(context, label, ({ fields }) => fields(11, [label, value])));
-  }
   sections.push(formSection(context, 'Requisition type', ({ choices }) => choices('Requisition type', requisitions, f.requisition, 2, 11)));
   if (f.reason) sections.push(formSection(context, 'Requisition details', ({ fields }) => fields(11, ['Requisition details', f.reason])));
   sections.push(formSection(context, 'Work terms', ({ fields }) => {
@@ -219,9 +240,35 @@ async function wrappedForm(row) {
     y = fields(y, ['Authorized HRD officer', row.hrd_at ? row.hrd_name : ''], ['Date', approvalTime(row.hrd_at)]);
     return y;
   }));
-  if (f.qualifications) sections.push(formSection(context, 'Qualifications', ({ fields }) => fields(11, ['Qualifications', f.qualifications])));
+  return { sections, otherDetails: f.qualifications ? [['Qualifications', f.qualifications]] : [] };
+}
 
-  return { sections, notes: [] };
+function postApprovalSections(otherDetails, assignment) {
+  const context = document.createElement('canvas').getContext('2d');
+  context.font = '10px Arial, sans-serif';
+  const left = otherDetails.flatMap(([label, value]) => [
+    { line: label, bold: true }, ...wrapText(context, value, 400).map(line => ({ line })),
+  ]);
+  const right = assignment ? wrapText(context, assignment, 132) : [];
+  const pageRows = 23;
+  const sections = [];
+  for (let start = 0; start < Math.max(left.length, right.length); start += pageRows) {
+    const notes = left.slice(start, start + pageRows);
+    const remarks = right.slice(start, start + pageRows);
+    sections.push(formSection(context, 'Details after approval', ({ add, text }) => {
+      const height = 12 + 13 * Math.max(notes.length, remarks.length + Number(Boolean(remarks.length)));
+      for (const [index, { line, bold }] of notes.entries()) {
+        text(line, 2, 12 + index * 13, 10, bold ? 'bold' : 'normal');
+      }
+      if (remarks.length) {
+        add('line', { x1: 413, y1: 3, x2: 413, y2: height - 5, stroke: '#7c7c7c', 'stroke-width': .7 });
+        text('Detailed work assignment', 420, 12, 9, 'bold');
+        for (const [index, line] of remarks.entries()) text(line, 420, 25 + index * 13);
+      }
+      return height;
+    }));
+  }
+  return sections;
 }
 
 function paginatePrint(sections, notes, paperWidth, paperHeight) {
@@ -255,7 +302,9 @@ function paginatePrint(sections, notes, paperWidth, paperHeight) {
 export async function preparePrint(row, paper, events, template = 'original') {
   const paperWidth = paper === 'Letter' ? 215.9 : 210;
   const paperHeight = paper === 'Letter' ? 279.4 : 297;
-  const { sections, notes } = await (template === 'wrapped' ? wrappedForm(row) : originalForm(row));
+  const { sections, otherDetails } = await (template === 'wrapped' ? wrappedForm(row) : originalForm(row));
+  sections.push(...postApprovalSections(otherDetails, row.form.assignment_remarks));
+  const notes = [];
   document.getElementById('print-preview').style.setProperty('--paper-width', paperWidth + 'mm');
   let rules = document.getElementById('print-paper');
   if (!rules) {

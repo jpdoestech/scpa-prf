@@ -164,6 +164,7 @@ select{max-width:100%;appearance:none;padding-right:2rem;background-image:url("d
 .form-section{padding:1rem}
 .form-section h2{margin-bottom:.85rem}
 .field-grid,.details{display:grid;grid-template-columns:minmax(0,1fr);gap:.85rem}
+.assignment-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:.85rem}
 label.field{display:flex;flex-direction:column;gap:.33rem;font-size:.93rem;font-weight:700;min-width:0}
 .field>input,.field>textarea,.field>select{width:100%;font-weight:400;font-size:1rem}
 .field small{color:var(--muted);font-weight:400}
@@ -334,7 +335,7 @@ textarea{resize:vertical}
 #print-root{font-family:Arial,sans-serif}
 .print-sheet{background:white;padding:clamp(.75rem,5vw,var(--print-inset,14mm))}
 .print-sheet+.print-sheet{margin-top:.75rem}
-.print-sheet svg,.print-measure svg{display:block;width:100%;height:auto;margin-inline:auto}
+.print-sheet>svg,.print-measure>svg{display:block;width:100%;height:auto;margin-inline:auto}
 .print-measure{position:absolute;left:-200vw;top:0;visibility:hidden;pointer-events:none}
 .print-note{margin:0;padding:1mm 2mm;font-family:Arial,sans-serif;font-size:9pt;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
 h2.print-note{padding-top:2.5mm;font-size:10pt;letter-spacing:normal}

@@ -73,7 +73,7 @@ const correctionFields = {
   requester_name: 'Requested by', branch_name: 'Branch / office', position: 'Position title',
   area: 'Assigned area / store', needed: 'Date needed from', needed_to: 'Date needed to', headcount: 'Headcount',
   service: 'Service time frame', service_other: 'Service time frame details', assignment: 'Work assignment',
-  assignment_description: 'Work assignment description', assignment_remarks: 'Work assignment remarks',
+  assignment_description: 'Brief description', assignment_remarks: 'Detailed work assignment',
   schedule: 'Work schedule', requisition: 'Requisition type', reason: 'Requisition details',
   qualifications: 'Qualifications', salary: 'Proposed salary', allowance: 'Allowance',
 };

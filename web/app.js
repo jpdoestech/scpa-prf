@@ -718,6 +718,9 @@ function formView(options) {
       `<option value="${key}" ${values[name] === key ? 'selected' : ''}>${value}</option>`).join('')}</select>`);
   const textarea = (name, label, max, rows = 2) =>
     field(name, label, `<textarea name="${name}" maxlength="${max}" rows="${rows}">${val(name)}</textarea>`, 'wide');
+  const shortText = (name, label) => /[\r\n]/.test(values[name] ?? '')
+    ? textarea(name, label, 650, 1)
+    : input(name, label, 'text', 'maxlength="650"', 'wide');
 
   renderFrame(`${backButton('back', 'Back to requests')}
     <div class="heading"><div><h1 tabindex="-1">${edit ? 'Revise request' : 'New request'}</h1>
@@ -729,12 +732,12 @@ function formView(options) {
         ${input('needed', 'Date needed from', 'date', 'required')}
         ${input('needed_to', 'Date needed to', 'date', `min="${val('needed')}" required`)}
       </div></section>
-      <section class="panel form-section"><h2>Assignment</h2><div class="field-grid">
+      <section class="panel form-section"><h2>Assignment</h2><div class="assignment-fields">
         ${select('service', 'Service time frame', services)}
+        ${shortText('service_other', 'Specify service time frame')}
         ${select('assignment', 'Work assignment', assignments)}
-        ${textarea('service_other', 'Specify service time frame', 650, 3)}
-        ${textarea('assignment_description', 'Work assignment description', 650, 3)}
-        ${textarea('assignment_remarks', 'Work assignment remarks', 650, 4)}
+        ${shortText('assignment_description', 'Brief description')}
+        ${textarea('assignment_remarks', 'Detailed work assignment', 650, 4)}
         ${input('schedule', 'Work schedule', 'text', 'maxlength="120" placeholder="e.g., Monday to Saturday, 8 AM–5 PM" required', 'wide')}
       </div></section>
       <section class="panel form-section"><h2>Requisition details</h2><div class="field-grid">
@@ -798,10 +801,10 @@ function detailView() {
         ${fieldEntry('Assigned area / store', f.area)}${fieldEntry('Headcount', f.headcount)}
         ${fieldEntry('Date requested', approvalTime(r.submitted_at, true))}${fieldEntry('Date needed', neededDateRange(f))}
         ${fieldEntry('Service time frame', services[f.service])}
-        ${fieldEntry('Work assignment', assignments[f.assignment])}
         ${fieldEntry('Other service time frame', f.service_other, true)}
-        ${fieldEntry('Work assignment description', f.assignment_description, true)}
-        ${fieldEntry('Work assignment remarks', f.assignment_remarks, true)}
+        ${fieldEntry('Work assignment', assignments[f.assignment])}
+        ${fieldEntry('Brief description', f.assignment_description, true)}
+        ${fieldEntry('Detailed work assignment', f.assignment_remarks, true)}
         ${fieldEntry('Requisition type', requisitions[f.requisition])}${fieldEntry('Work schedule', f.schedule)}
         ${fieldEntry('Requisition details', f.reason, true)}${fieldEntry('Qualifications', f.qualifications, true)}
         ${fieldEntry('Proposed salary', f.salary)}${fieldEntry('Allowance', f.allowance)}
