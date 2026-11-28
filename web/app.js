@@ -1535,12 +1535,12 @@ app.addEventListener('click', async e => {
       const preview = printReturn = { button: target, scroll: window.scrollY, row, events, paper, templates, template, prepared,
         filename: row.number ?? `PRF-pending-${row.id.slice(0, 8)}` };
       printTemplateSelect.replaceChildren(...templates.map(key => new Option(printTemplateLabels[key], key)));
-      printTemplateSelect.closest('label').hidden = templates.length < 2;
+      printTemplateSelect.disabled = templates.length < 2;
+      printPaperSize.value = paper;
       app.hidden = true;
       printPreview.hidden = false;
       window.scrollTo(0, 0);
-      const printButton = printPreview.querySelector('[data-action="send-to-printer"]');
-      printButton.focus({ preventScroll: true });
+      printPreview.querySelector('h1').focus({ preventScroll: true });
       loadPrintImages(preview);
     } catch (err) {
       popupNotice(`Could not prepare the printout. ${err.message}`, true);
@@ -1549,20 +1549,26 @@ app.addEventListener('click', async e => {
     }
   }
 });
-printPreview.querySelector('.print-controls').innerHTML = `<div class="actions">
-  ${backButton('close-print', 'Back to request')}
-  ${button('send-to-printer', 'Print', 'primary', 'print')}
-  <div class="print-download-choice">
-    <select id="print-download-format" aria-label="Download as"><option value="pdf">PDF</option><option value="png">PNG</option></select>
-    ${button('download-print', 'Download', 'secondary', 'download', 'disabled')}
-  </div>
-  ${button('copy-print', 'Copy image', 'secondary', 'copy', `disabled ${canCopyImage ? '' : 'hidden'}`)}
-  </div><label class="print-template-choice" hidden>Print template <select id="print-template-choice" aria-label="Print template"></select></label>
-  <p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>`;
+printPreview.querySelector('.print-controls').innerHTML = `<div class="heading register-heading print-heading">
+  <h1 tabindex="-1">Print/Export PRF</h1>${backButton('close-print', 'Back to request')}</div>
+  <section class="panel print-toolbar" aria-label="Print and export controls">
+    <div class="print-settings">
+      <label class="field print-template-choice">Print template<select id="print-template-choice"></select></label>
+      <label class="field">Paper size<select id="print-paper-size"><option>A4</option><option>Letter</option></select></label>
+      <label class="field">Download as<select id="print-download-format"><option value="pdf">PDF</option><option value="png">PNG</option></select></label>
+    </div>
+    <div class="print-actions">
+      ${button('send-to-printer', 'Print', 'primary', 'print')}
+      ${button('download-print', 'Download', 'secondary', 'download', 'disabled')}
+      ${button('copy-print', 'Copy image', 'secondary', 'copy', `disabled ${canCopyImage ? '' : 'hidden'}`)}
+    </div>
+    <p class="print-phone-help muted small">You can also use your browser’s Share menu and choose Print.</p>
+  </section>`;
 const printDownload = printPreview.querySelector('[data-action="download-print"]');
 const printDownloadFormat = document.getElementById('print-download-format');
 const copyImageButton = printPreview.querySelector('[data-action="copy-print"]');
 const printTemplateSelect = document.getElementById('print-template-choice');
+const printPaperSize = document.getElementById('print-paper-size');
 const printButton = printPreview.querySelector('[data-action="send-to-printer"]');
 const closePrintButton = printPreview.querySelector('[data-action="close-print"]');
 
@@ -1580,27 +1586,34 @@ function loadPrintImages(preview) {
   });
 }
 
-printTemplateSelect.addEventListener('change', async () => {
+async function updatePrintLayout(event) {
   const preview = printReturn;
   const template = printTemplateSelect.value;
-  if (!preview?.templates.includes(template) || template === preview.template) return;
-  printTemplateSelect.disabled = printButton.disabled = closePrintButton.disabled = true;
+  const size = printPaperSize.value;
+  if (!preview?.templates.includes(template) || (template === preview.template && size === preview.paper)) return;
+  printTemplateSelect.disabled = printPaperSize.disabled = printButton.disabled = closePrintButton.disabled = true;
   printDownload.disabled = copyImageButton.disabled = true;
   popupNotice();
   try {
-    preview.prepared = await preparePrint(preview.row, preview.paper, preview.events, template);
+    preview.prepared = await preparePrint(preview.row, size, preview.events, template);
     preview.template = template;
+    preview.paper = paper = size;
+    document.getElementById('paper').value = size;
     loadPrintImages(preview);
   } catch (error) {
     printTemplateSelect.value = preview.template;
+    printPaperSize.value = preview.paper;
     printDownload.disabled = !preview.layer || Boolean(preview.downloading);
     copyImageButton.disabled = !preview.layer || !canCopyImage;
     popupNotice(error.message, true);
   } finally {
-    printTemplateSelect.disabled = printButton.disabled = closePrintButton.disabled = false;
-    printTemplateSelect.focus({ preventScroll: true });
+    printPaperSize.disabled = printButton.disabled = closePrintButton.disabled = false;
+    printTemplateSelect.disabled = preview.templates.length < 2;
+    event.target.focus({ preventScroll: true });
   }
-});
+}
+printTemplateSelect.addEventListener('change', updatePrintLayout);
+printPaperSize.addEventListener('change', updatePrintLayout);
 printPreview.addEventListener('click', async event => {
   const action = event.target.closest('button')?.dataset.action;
   if (action === 'send-to-printer') {
@@ -1612,6 +1625,8 @@ printPreview.addEventListener('click', async event => {
     const format = printDownloadFormat.value;
     const { prepared, layer } = preview;
     preview.downloading = printDownload.disabled = printDownloadFormat.disabled = true;
+    printTemplateSelect.disabled = printPaperSize.disabled = true;
+    printDownload.setAttribute('aria-busy', 'true');
     try {
       let file;
       if (format === 'pdf') {
@@ -1640,6 +1655,9 @@ printPreview.addEventListener('click', async event => {
       if (printReturn === preview) {
         printDownloadFormat.disabled = false;
         printDownload.disabled = !preview.layer;
+        printTemplateSelect.disabled = preview.templates.length < 2;
+        printPaperSize.disabled = false;
+        printDownload.removeAttribute('aria-busy');
       }
     }
   } else if (action === 'copy-print' && printReturn?.layer) {
@@ -1665,6 +1683,8 @@ printPreview.addEventListener('click', async event => {
     if (printReturn.url) URL.revokeObjectURL(printReturn.url);
     printDownload.disabled = true;
     printDownloadFormat.disabled = false;
+    printPaperSize.disabled = false;
+    printDownload.removeAttribute('aria-busy');
     copyImageButton.disabled = true;
     popupNotice();
     printReturn = null;
