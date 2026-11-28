@@ -469,7 +469,10 @@ function renderAccountForm(account, approvers, branches, branchField) {
           ${creating ? password('Initial password') : ''}
         </div><div class="actions">${creating ? submitButton('Create account', 'plus') : submitButton('Save changes', 'check')}</div>
       </form></section>
-      ${creating || account.superAdmin ? '' : `<section class="panel panel-content admin-editor"><h2>Password reset</h2><form id="admin-form-reset" class="sheet"><input type="hidden" name="action" value="reset"><input type="hidden" name="account_id" value="${escape(account.id)}">${password('New password')}<div class="actions">${submitButton('Reset password', 'lock', 'secondary')}</div></form></section>`}
+      ${creating || account.superAdmin ? '' : `<section class="panel panel-content admin-editor"><h2>Password reset</h2><form id="admin-form-reset" class="sheet"><input type="hidden" name="action" value="reset"><input type="hidden" name="account_id" value="${escape(account.id)}">${password('New password')}<div class="actions">${submitButton('Reset password', 'lock', 'secondary')}</div></form>
+        <div class="admin-delete"><h2>Delete account</h2><p class="muted small">Permanently remove this account and its sign-in.</p>
+          ${button('delete-user', 'Delete account', 'danger', 'close', `data-id="${escape(account.id)}" aria-haspopup="dialog"`)}</div>
+      </section>`}
     </div>`;
 }
 
@@ -1104,6 +1107,18 @@ app.addEventListener('click', async e => {
     adminListPosition = window.scrollY;
     adminLauncher = 'new-branch';
     await openAdmin('new-branch');
+  } else if (action === 'delete-user' && person?.superAdmin) {
+    const account = managedAccounts.find(candidate => candidate.id === id);
+    if (!account || account.superAdmin) return;
+    const confirmed = await optionDialog('Permanently delete this account?', `<p id="option-dialog-description">
+      <strong>${escape(account.email || account.name)}</strong> will lose sign-in and branch access. This can’t be undone.</p>
+      ${optionDialogFooter('delete', 'Delete account', 'close', true)}`, target,
+      { save: () => adminAccounts({ action: 'delete', account_id: id }) });
+    if (confirmed) {
+      adminDirectory = null;
+      adminLauncher = '';
+      await openAdmin('', 'Account deleted.');
+    }
   } else if (action === 'manage-user' && (person?.superAdmin || person?.canManageOptions)) {
     adminListPosition = window.scrollY;
     adminLauncher = id;
