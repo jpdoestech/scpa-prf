@@ -1,4 +1,4 @@
-import { approvalTime, assignments, correctionHistory, eventTitle, neededDateRange, prfNumber, requisitions, services } from './model.js';
+import { approvalTime, assignments, assignmentRemarkEntries, correctionHistory, eventTitle, neededDateRange, prfNumber, requisitions, services } from './model.js';
 
 const logo = './assets/scpa-logo.png';
 const originalTemplate = './assets/scpa-prf-template.png';
@@ -47,7 +47,7 @@ function wrapText(context, value, width, firstWidth = width) {
 }
 
 function remarkLines(context, value, width) {
-  const enteredLines = value.split(/\r\n?|\n/).filter(line => line.trim());
+  const enteredLines = assignmentRemarkEntries(value);
   const indent = enteredLines.length > 1 ? 12 : 0;
   return enteredLines.flatMap(enteredLine =>
     wrapText(context, enteredLine, width - indent)

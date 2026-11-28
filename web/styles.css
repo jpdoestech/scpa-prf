@@ -221,6 +221,7 @@ textarea{resize:vertical}
 .details{margin:0;gap:.45rem .8rem;line-height:1.4}
 .details dt{color:var(--muted);font-size:.8rem;overflow-wrap:anywhere}
 .details dd{margin:.12rem 0 0;font-size:.92rem;font-weight:650;white-space:pre-wrap;overflow-wrap:anywhere}
+.details .assignment-remarks{margin:0;padding-inline-start:1.2rem;list-style:disc outside;white-space:normal}
 .details .wide{grid-column:1/-1}
 .status-line{display:flex;align-items:center;flex-wrap:wrap;gap:.4rem;margin-top:.4rem}
 .timeline{list-style:none;padding:0;margin:0}

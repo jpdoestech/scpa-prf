@@ -4,7 +4,7 @@ import {
   pageSize, saveOwnName, updateOwnPassword, loadOwnPhoto, saveOwnPhoto, employeeDirectory, saveEmployeeBranches,
   printTemplates, savePrintTemplates,
 } from './data.js';
-import { statuses, services, assignments, requisitions, canDecide, canEditRequest, skippedApproval, nextActor, eventTitle, correctionHistory, neededDateRange, dateTime, approvalTime, prfNumber } from './model.js';
+import { statuses, services, assignments, assignmentRemarkEntries, requisitions, canDecide, canEditRequest, skippedApproval, nextActor, eventTitle, correctionHistory, neededDateRange, dateTime, approvalTime, prfNumber } from './model.js';
 import { preparePrintImage, drawPrintImage, preparePrint, stampPrint } from './print.js';
 import { enhanceSelects, focusSelect } from './search-select.js';
 
@@ -915,6 +915,12 @@ function detailView() {
   const f = r.form;
   const fieldEntry = (label, value, wide = false) => value ?
     `<div ${wide ? 'class="wide"' : ''}><dt>${label}</dt><dd>${escape(value)}</dd></div>` : '';
+  const remarks = assignmentRemarkEntries(f.assignment_remarks);
+  const assignmentDetails = remarks.length > 1
+    ? `<div class="wide"><dt>Detailed work assignment</dt><dd><ul class="assignment-remarks">
+        ${remarks.map(line => `<li>${escape(line)}</li>`).join('')}
+      </ul></dd></div>`
+    : fieldEntry('Detailed work assignment', remarks[0], true);
   const next = nextActor(r);
   const decision = canDecide(r, person.id);
   const skipped = person.canOverrideApproval ? skippedApproval(r, person.id) : '';
@@ -941,7 +947,7 @@ function detailView() {
         ${fieldEntry('Other service time frame', f.service_other, true)}
         ${fieldEntry('Work assignment', assignments[f.assignment])}
         ${fieldEntry('Brief description', f.assignment_description, true)}
-        ${fieldEntry('Detailed work assignment', f.assignment_remarks, true)}
+        ${assignmentDetails}
         ${fieldEntry('Work schedule', f.schedule, true)}
         </dl></div><div><h3>Requisition details</h3><dl class="details">
         ${fieldEntry('Requisition type', requisitions[f.requisition], true)}

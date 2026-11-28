@@ -17,6 +17,8 @@ export const requisitions = {
   new: 'New position', replacement: 'Vacancy replacement', additional: 'Additional personnel', other: 'Other',
 };
 
+export const assignmentRemarkEntries = value => (value ?? '').split(/\r\n?|\n/).filter(line => line.trim());
+
 const clock = new Intl.DateTimeFormat('en-PH', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila',
 });
