@@ -59,6 +59,7 @@ let screen = 'requests';
 let result;
 let detail;
 let edit;
+let requestDirty = false;
 let page = 0;
 let filter = '';
 let inboxStatus = '';
@@ -745,7 +746,7 @@ function requestOptionField(kind, label, addLabel, names, selected) {
         <option value="">${kind === 'branch' ? 'Choose a branch' : kind === 'position' ? 'Choose a position' : 'Choose an area'}</option>
         ${choices.map(name => `<option value="${escape(name)}" ${name === selectedName ? 'selected' : ''}>${escape(name)}</option>`).join('')}
       </select></div>
-      ${addLabel ? button('add-request-option', 'Add', 'request-option-add', 'plus',
+      ${addLabel ? button('add-request-option', 'Add', 'secondary request-option-add', 'plus',
         `aria-label="${escape(addLabel)}" title="${escape(addLabel)}" aria-haspopup="dialog"`) : ''}
     </div>
   </div>`;
@@ -769,6 +770,7 @@ async function saveRequestOption(target) {
     }
     select.value = savedName;
     select.dispatchEvent(new Event('change', { bubbles: true }));
+    focusSelect(select);
   }
 }
 
@@ -805,32 +807,36 @@ function formView(options) {
     </select><small id="officer-availability" hidden>No assigned Officer/Agent covers this branch.</small>`)
     : edit?.officer_name ? `<div class="field"><strong>Request on behalf of</strong><p>${escape(edit.officer_name)}</p></div>` : '';
 
-  renderFrame(`${backButton('back', 'Back to requests')}
-    <div class="heading"><div><h1 tabindex="-1">${edit ? 'Revise request' : 'New request'}</h1>
-      <p>${escape(person.name)}</p></div></div>
-    <form id="request-form" class="sheet">
-      <section class="panel form-section"><h2>Personnel needed</h2><div class="field-grid">
+  renderFrame(`<div class="heading register-heading request-editor-heading"><div><h1 tabindex="-1">${edit ? 'Revise request' : 'New request'}</h1>
+      <div class="request-editor-context">${edit ? badge(edit.status) : ''}<p>${escape(person.name)}</p></div></div>${backButton('back', 'Back to requests')}</div>
+    <form id="request-form" class="sheet request-editor">
+      <section class="panel request-editor-section" aria-labelledby="personnel-heading">
+        <h2 id="personnel-heading">${icon('users')}Personnel needed</h2><div class="field-grid">
         ${requestOptionFields(options, { ...values, branch: edit?.branch_name ?? person.branch }, officerField)}
         ${input('headcount', 'Number of personnel', 'text', 'inputmode="numeric" pattern="[1-9][0-9]{0,3}" title="Enter a whole number from 1 to 9,999." required')}
-        ${input('needed', 'Date needed from', 'date', 'required')}
-        ${input('needed_to', 'Date needed to', 'date', `min="${val('needed')}" required`)}
+        <fieldset class="request-dates"><legend>Date needed</legend><div class="request-date-inputs">
+          ${input('needed', 'From', 'date', 'aria-label="Date needed from" required')}
+          ${input('needed_to', 'To', 'date', `aria-label="Date needed to" min="${val('needed')}" required`)}
+        </div></fieldset>
       </div></section>
-      <section class="panel form-section"><h2>Assignment</h2><div class="assignment-fields">
+      <section class="panel request-editor-section" aria-labelledby="assignment-heading">
+        <h2 id="assignment-heading">${icon('clock')}Assignment</h2><div class="assignment-fields">
         ${select('service', 'Service time frame', services)}
         ${shortText('service_other', 'Specify service time frame')}
         ${select('assignment', 'Work assignment', assignments)}
         ${shortText('assignment_description', 'Brief description')}
-        ${textarea('assignment_remarks', 'Detailed work assignment', 650, 4)}
+        ${textarea('assignment_remarks', 'Detailed work assignment', 650, 3)}
         ${input('schedule', 'Work schedule', 'text', 'maxlength="120" placeholder="e.g., Monday to Saturday, 8 AM–5 PM" required', 'wide')}
       </div></section>
-      <section class="panel form-section"><h2>Requisition details</h2><div class="field-grid">
+      <section class="panel request-editor-section request-requisition" aria-labelledby="requisition-heading">
+        <h2 id="requisition-heading">${icon('list')}Requisition details</h2><div class="field-grid">
         ${select('requisition', 'Requisition type', requisitions)}
         ${textarea('reason', '<span id="reason-label">Reason / details</span>', 500)}
         ${textarea('qualifications', 'Qualifications (optional)', 650)}
         ${input('salary', 'Proposed monthly / daily salary (optional)', 'text', 'maxlength="36" placeholder="e.g., ₱18,000 / month"')}
         ${input('allowance', 'Allowance (optional)', 'text', 'maxlength="40"')}
       </div></section>
-      <div class="actions">${submitButton(delegate || edit?.officer_id ? (edit ? 'Resubmit request' : 'Submit request')
+      <div class="actions request-editor-actions">${submitButton(delegate || edit?.officer_id ? (edit ? 'Resubmit request' : 'Submit request')
         : (edit ? 'Resubmit to supervisor' : 'Submit to supervisor'), 'send')}
       ${button('back', 'Cancel', 'secondary', 'close')}</div>
     </form>`);
@@ -963,6 +969,7 @@ async function startRequest(row = null) {
   clearTimeout(searchTimer);
   screen = 'new';
   edit = row;
+  requestDirty = false;
   pendingId = row?.id ?? crypto.randomUUID();
   await loadRequestOptions(backButton('back', 'Back to requests'), 'retry-request', formView);
 }
@@ -1185,6 +1192,7 @@ async function start() {
 
 app.addEventListener('change', async e => {
   const target = e.target;
+  if (target.form?.id === 'request-form') requestDirty = true;
   const checklist = target.closest('.assignment-checklist');
   if (checklist) {
     const count = checklist.querySelectorAll('input:checked').length;
@@ -1247,6 +1255,7 @@ app.addEventListener('change', async e => {
   }
 });
 app.addEventListener('input', e => {
+  if (e.target.form?.id === 'request-form' && !e.target.matches('.search-select input')) requestDirty = true;
   if (e.target.name === 'headcount' && e.target.form?.id === 'request-form' && !e.isComposing) {
     const value = e.target.value.normalize('NFKC').trim()
       .replace(/[٠-٩۰-۹]/g, digit => String('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹'.indexOf(digit) % 10))
@@ -1293,6 +1302,11 @@ app.addEventListener('click', async e => {
     ?? (window.getSelection()?.isCollapsed ? e.target.closest('.request-row')?.querySelector('[data-action="record"]') : null);
   if (!target || busy) return;
   const { action, id } = target.dataset;
+  if (screen === 'new' && requestDirty && ['back', 'requests', 'inbox', 'admin', 'profile', 'signout'].includes(action)) {
+    const discard = await optionDialog('Discard request changes?', `<p id="option-dialog-description">Your unsaved changes will be lost.</p>
+      ${optionDialogFooter('discard', 'Discard changes', 'close', true)}`, target, { alert: true });
+    if (!discard) return;
+  }
   if (adminDirty && !window.confirm('Discard unsaved account changes?')) return;
   adminDirty = false;
   if (action === 'density') {
@@ -1691,6 +1705,7 @@ app.addEventListener('submit', async event => {
       else await openAdmin(values.account_id, 'PRF profile saved.');
     } else if (form.id === 'request-form') {
       const row = await submit({ id: pendingId, form: values, version: edit?.version });
+      requestDirty = false;
       const recipient = row.status === 'officer' ? 'the Officer/Agent' : 'the supervisor';
       await openRecord(row.id, screenOrigin, `Request ${edit ? 'resubmitted' : 'submitted'} to ${recipient}.`);
     } else if (form.id === 'decision-form') {

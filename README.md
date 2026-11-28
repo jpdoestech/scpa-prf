@@ -19,6 +19,13 @@ Open http://127.0.0.1:4173. Set `PUBLIC_DEMO=true` only for sample builds.
 
 Use the shared `data-search-select` control for searchable directories. Choosing an option by touch, mouse, or keyboard closes the list and locks the displayed value. The **×** button beside the selection clears it and returns focus to the search field. Only a chosen option is saved. Keep fixed-choice dropdowns native.
 
+## PRF interface conventions
+
+- Use the repository’s **UI/UX Pro Max** skill for workflow, responsive layout, and usability checks. Use **UI Styling** for shared button variants, status badges, form spacing, dialog focus, and CSS tokens. Follow `AGENTS.md` and build on the existing JavaScript components and stylesheet.
+- Use the Users and request lists as the reference for compact panels, readable status badges, and icon-and-text actions. Keep one primary action per form. Group related inputs in clearly titled panels and let the layout reflow without changing reading or keyboard order.
+- Keep labels visible, touch targets at least 44px, and phone inputs at 16px. Use native controls for fixed choices and dates. Return focus to the launcher when dismissing a dialog and to the field when adding and selecting an option. Confirm before discarding unsaved edits.
+- Verify new layouts at 320px and 390px, then tablet and desktop widths. Exercise keyboard focus, long labels, validation, and the complete form flow with test data.
+
 ## Approval and paper defaults
 
 - The super admin assigns branches to Supervisors, HRD approvers, Officer/Agent accounts, and Coordinators. Supervisors and HRD can update Officer/Agent branch membership within their own branches.
