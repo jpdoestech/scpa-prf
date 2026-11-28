@@ -289,14 +289,14 @@ function postApprovalSections(otherDetails, assignment, events, wrapped) {
   const divider = formWidth * .55;
   const separatorColor = '#b7c0ba';
   const left = { x: 2, end: split ? divider - 8 : formWidth - 2, entries: [], start: 0 };
-  const right = { x: divider + 8, end: formWidth - 2, entries: [], start: 0, ruled: true };
+  const right = { x: divider + 8, end: formWidth - 2, entries: [], start: 0 };
   const columns = split ? [left, right] : [left];
   function heading(label) {
     left.entries.push({ line: label, heading: true });
   }
-  function detail(text, timeline = false, column = left) {
-    const width = column.end - column.x - (timeline ? 12 : 0);
-    column.entries.push(...wrapText(context, text, width).map(line => ({ line, timeline })));
+  function detail(text, timeline = false) {
+    const width = left.end - left.x - (timeline ? 12 : 0);
+    left.entries.push(...wrapText(context, text, width).map(line => ({ line, timeline })));
   }
   for (const [label, value] of otherDetails) {
     heading(label);
@@ -325,7 +325,12 @@ function postApprovalSections(otherDetails, assignment, events, wrapped) {
 
   if (split) {
     right.entries.push({ line: 'Detailed work assignment', heading: true });
-    detail(assignment, false, right);
+    const enteredLines = assignment.split(/\r\n?|\n/).filter(line => line.trim());
+    const indent = enteredLines.length > 1 ? 12 : 0;
+    for (const enteredLine of enteredLines) {
+      const lines = wrapText(context, enteredLine, right.end - right.x - indent);
+      right.entries.push(...lines.map((line, index) => ({ line, indent, bullet: indent > 0 && index === 0 })));
+    }
   }
   const stamp = {};
   if (!wrapped) (split ? right : left).entries.push({ stamp: true });
@@ -339,12 +344,12 @@ function postApprovalSections(otherDetails, assignment, events, wrapped) {
       column.start = end;
       return { ...column, notes: entries.slice(start, end) };
     });
-    sections.push(formSection(context, 'Details after approval', ({ add, text, rule }) => {
+    sections.push(formSection(context, 'Details after approval', ({ add, text }) => {
       const height = 10 + 12 * Math.max(...chunks.map(({ notes }) => notes.length + (split && notes.at(-1)?.stamp ? 1 : 0)));
       if (split && chunks[1].notes.length) {
         add('line', { x1: divider, x2: divider, y1: 2, y2: height - 5, stroke: separatorColor, 'stroke-width': .7 });
       }
-      for (const { x, end, notes, ruled } of chunks) {
+      for (const { x, end, notes } of chunks) {
         const first = notes.findIndex(entry => entry.timeline);
         const last = notes.findLastIndex(entry => entry.timeline);
         if (first >= 0) add('line', { x1: x + 3, x2: x + 3, y1: 8 + first * 12, y2: 12 + last * 12, stroke: separatorColor, 'stroke-width': .7 });
@@ -354,11 +359,11 @@ function postApprovalSections(otherDetails, assignment, events, wrapped) {
             Object.assign(stamp, { node: add('g', { 'data-print-stamp': '' }), x, y, width: end - x });
             continue;
           }
-          const { line, heading: bold, timeline, marker } = entry;
+          const { line, heading: bold, timeline, marker, indent = 0, bullet } = entry;
           if (marker) add('circle', { cx: x + 3, cy: y - 3, r: 2.4, fill: '#235544' });
-          text(line, x + (timeline ? 12 : 0), y, timeline && !bold ? 9.5 : 10,
+          if (bullet) add('circle', { cx: x + 3, cy: y - 3, r: 1.7, fill: '#111' });
+          text(line, x + (timeline ? 12 : indent), y, timeline && !bold ? 9.5 : 10,
             bold ? 'bold' : 'normal', timeline && !bold ? '#444' : '#111');
-          if (ruled && !bold) rule(x, y + 3, end - x, separatorColor);
           if (entry.metadata) text(entry.metadata, entry.metadataX, y, 9.5, 'normal', '#444');
         }
       }
